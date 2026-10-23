@@ -4,13 +4,17 @@
 
 ## 집에서 준비
 
-Windows 10/11, Python 3.10 이상 또는 uv, ChatGPT 데스크톱 앱, 양쪽 기기의 Tailscale이 필요합니다.
+Windows 10/11과 로그인된 ChatGPT 데스크톱 앱이 필요합니다. **EXE 버전은 Python을 따로 설치하지 않아도 됩니다.**
 
 1. 노트북을 충전기에 연결하고 덮개를 연 채 로그인 상태로 둡니다. 사용할 기존 로컬 Work 대화를 열어 둡니다.
-2. 프로젝트 폴더에서 PowerShell로 `./start.ps1`을 실행합니다. 직접 설치하려면 `pip install -e '.[windows]'` 후 `pocket-bridge`를 실행합니다.
-3. 실행 창의 Pairing token을 개인적으로 보관합니다. 브라우저 세션이 종료되면 다시 입력해야 할 수 있습니다.
-4. 폰과 노트북을 같은 Tailscale 네트워크에 연결합니다. 노트북에서 `tailscale serve --bg 8765`, `tailscale serve status`를 실행합니다.
-5. 나온 HTTPS `*.ts.net` 주소를 폰 Safari에서 열어 토큰을 입력합니다. 공유 → 홈 화면에 추가를 사용하면 앱처럼 열 수 있습니다.
+2. `PocketChatGPTBridge.exe`를 더블클릭합니다. ChatGPT 앱이 닫혀 있으면 열고, 서버 실행과 자동 절전 방지, Tailscale 설치·연결·HTTPS 설정을 순서대로 진행합니다.
+3. 첫 실행에서 Windows 설치 승인이 뜨면 허용하고, 열린 브라우저에서 Tailscale 로그인과 연결 승인을 완료합니다. 이후에는 로그인 상태를 재사용합니다.
+4. iPhone에도 Tailscale을 설치하고 **노트북과 같은 Tailscale 계정**으로 로그인해 연결합니다. 폰 설치·로그인은 폰에서 직접 진행합니다.
+5. 실행 창에 접속 주소와 QR 코드가 나오면 폰 Safari에서 열고, 창의 인증 토큰을 입력합니다. 토큰 표시·복사 버튼을 사용할 수 있습니다. 공유 → 홈 화면에 추가로 등록할 수도 있습니다.
+
+사용 중에는 실행 창을 켜둡니다. 창을 닫으면 서버와 자동 절전 방지 요청이 종료됩니다. Tailscale 자체는 다른 용도로도 쓸 수 있으므로 종료하거나 로그아웃하지 않습니다. 설치·로그인·HTTPS 설정이 끝난 다음 실행부터는 EXE를 여는 것으로 노트북 연결 준비를 진행합니다. Windows 잠금과 ChatGPT 로그인은 자동으로 해제하지 않습니다.
+
+소스로 실행할 때만 Python 3.10 이상 또는 uv가 필요합니다. 기존 `start.ps1`은 서버만 실행하는 개발용 경로이며 Tailscale 자동 설정은 EXE 실행 창에서 처리합니다.
 
 서버는 `127.0.0.1`에서만 실행됩니다. Tailscale **Serve만 사용**하고 Funnel이나 공개 포트 포워딩은 사용하지 마세요. 폰의 ChatGPT 로그인과 Tailscale 로그인은 별개입니다.
 
@@ -50,3 +54,7 @@ UIA 탐색이 안 될 때만 실행할 PowerShell에 `REMOTE_ALLOW_COORDINATE_IN
 ## 자동 테스트
 
 `pip install -e '.[test]'`, `pytest -q`, `node --test tests/test_mobile.cjs`를 실행합니다. Node 22 이상은 프런트엔드 테스트에만 필요합니다.
+
+## EXE 빌드
+
+GUI 사용이 가능한 Windows에서 `build-exe.ps1`을 실행합니다. `.venv` 개발 환경이 필요하며 `.[windows,desktop]`을 설치한 뒤 PyInstaller로 Python과 필요한 라이브러리, 웹 화면을 한 파일에 묶습니다. 결과는 `dist/PocketChatGPTBridge.exe`와 프로젝트 폴더에 생성됩니다. 빌드 도구와 개발 환경은 완성된 EXE를 사용하는 사람에게 필요하지 않습니다.

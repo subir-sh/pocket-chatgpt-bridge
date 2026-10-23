@@ -6,13 +6,17 @@ Use your iPhone to control the Windows ChatGPT app left running at home. Your ph
 
 ## Setup
 
-Windows 10/11, Python 3.10+ or uv, ChatGPT Desktop, and Tailscale on both devices are required.
+Windows 10/11 and a signed-in ChatGPT Desktop app are required. The standalone **PocketChatGPTBridge.exe** includes Python and its dependencies.
 
 1. Connect the laptop to power, leave the lid open and Windows unlocked, and open the desired local Work conversation.
-2. Download or clone this repository and run `./start.ps1` in PowerShell. Alternatively, install with `pip install -e '.[windows]'` and run `pocket-bridge`.
-3. Save the terminal's pairing token privately. It lives outside the repository at `%LOCALAPPDATA%\ChatGPTRemoteController\pairing-token.txt`.
-4. Connect the iPhone and laptop to the same Tailscale network. Run `tailscale serve --bg 8765`, then `tailscale serve status` on the laptop.
-5. Open the returned HTTPS `*.ts.net` URL in Safari, enter the token, and optionally use Share → Add to Home Screen.
+2. Double-click `PocketChatGPTBridge.exe`. It opens ChatGPT if needed, starts the bridge and sleep guard, installs Tailscale if missing, connects it, and configures private HTTPS.
+3. On first run, approve the Windows installer and complete Tailscale login / HTTPS consent in the browser opened by the launcher. Existing login state is reused later.
+4. Install Tailscale on the iPhone and sign in with the same Tailscale account. Phone installation and login must be completed on the phone.
+5. Open the launcher's address or scan its QR code in Safari and enter the pairing token displayed in the launcher. Optionally use Share → Add to Home Screen.
+
+Keep the launcher open while using the bridge. Closing it stops its server and sleep guard; it does not stop or sign out Tailscale. The token remains outside the repository at `%LOCALAPPDATA%\ChatGPTRemoteController\pairing-token.txt`. Windows lock state and ChatGPT login are not bypassed.
+
+For source development, Python 3.10+ or uv is still required. `./start.ps1` installs and runs only the server; Tailscale automation is part of the EXE launcher. Build the EXE with `./build-exe.ps1` on Windows with working GUI support. The build script installs `.[windows,desktop]` and creates a single executable in `dist` and the project root.
 
 The server binds to `127.0.0.1`; Tailscale Serve supplies private-network HTTPS. **Do not enable Funnel or public port forwarding.** See [Tailscale Serve setup](https://tailscale.com/kb/1312/serve) if HTTPS needs enabling. Tailscale identity is separate from ChatGPT identity.
 

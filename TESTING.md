@@ -1,5 +1,15 @@
 # Verification
 
+## Windows EXE launcher — 2026-10-24
+
+- Built a single windowed `PocketChatGPTBridge.exe` with the Python interpreter, Windows input libraries, GUI, and web assets included. No external Python executable is used by the packaged app.
+- Launched the packaged GUI and checked the connection-address, QR, and masked-token layout. The packaging check skips installation and networking.
+- Started the actual frozen executable from an unrelated temporary working directory, both with the demo driver and with the real Windows driver. The web UI loaded, unauthenticated status returned 401, authenticated status returned 200, and the real driver reported an active sleep guard. No chat messages were sent in these checks.
+- Verified that closing the launcher's Windows job terminates both the onefile bootloader and its server child, leaving no listener on port 8765.
+- Downloaded the current official Tailscale MSI and successfully verified its Authenticode signature and Tailscale publisher. The installer was not executed during verification.
+- Simulated only the first-run installation/login/Serve sequence, an empty `null` Serve configuration, and browser handoff for login URLs. These checks do not establish an actual Tailscale installation or connection.
+- Physical iPhone, cellular access, real account login, and HTTPS consent still need a user-assisted end-to-end check. The launcher presents those first-run approvals; it does not bypass them.
+
 Tested on Windows on 2026-10-23. Results below distinguish real desktop execution from simulated network/browser cases.
 
 ## Automated regression checks

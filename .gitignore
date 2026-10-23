@@ -19,3 +19,5 @@ test-results/
 playwright-report/
 pairing-token.txt
 *-token.txt
+PocketChatGPTBridge.exe
+PocketChatGPTBridge.spec
