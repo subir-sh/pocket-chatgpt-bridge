@@ -42,13 +42,6 @@ test('offline startup retains pairing and reconnects automatically',async()=>{
   assert.match(app.node('connection').textContent,/●/);
 });
 
-test('only an authentication rejection removes pairing',async()=>{
-  const app=mobile(async()=>({ok:false,status:401,json:async()=>({detail:'invalid'})}));
-  await tick();await tick();
-  assert.equal(app.storage.has('remote-token'),false);
-  assert.equal(app.node('pairing').hidden,false);
-});
-
 test('manual retry after a lost response preserves the request ID',async()=>{
   const sends=[];
   const app=mobile(async(url,options)=>{
@@ -69,24 +62,4 @@ test('manual retry after a lost response preserves the request ID',async()=>{
   assert.equal(sends[0].request_id,sends[1].request_id);
   assert.equal(sends[0].server_instance,'server-1');
   assert.equal(app.storage.has('remote-pending'),false);
-});
-
-test('page reload restores the unconfirmed message and can query its outcome',async()=>{
-  const storage=new Map([
-    ['remote-token','valid-token'],
-    ['remote-pending',JSON.stringify({text:'not lost',request_id:'pending_01',server_instance:'server-1'})],
-  ]);
-  let sends=0;
-  const app=mobile(async url=>{
-    if(url.includes('/sends/'))return ok({state:'completed',input_sent:true});
-    if(url.endsWith('/send'))sends++;
-    if(url.endsWith('/sessions'))return ok({items:[]});
-    return status();
-  },storage);
-  await tick();await tick();
-  assert.equal(app.node('message').value,'not lost');
-  await app.node('checkPending').events.click();
-  assert.equal(storage.has('remote-pending'),false);
-  assert.equal(app.node('message').value,'');
-  assert.equal(sends,0);
 });

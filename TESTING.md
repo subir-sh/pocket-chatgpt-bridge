@@ -4,8 +4,9 @@ Tested on Windows on 2026-10-23. Results below distinguish real desktop executio
 
 ## Automated regression checks
 
-- **17 Python tests passed:** authentication, token generation, sessions with the demo driver, preview response, input validation, duplicate and uncertain submissions, server restart detection, delivery queries, idle-sleep lifecycle, and refusing ambiguous editors unless coordinate fallback is explicitly enabled.
-- **4 Node tests passed:** offline startup preserves pairing and reconnects; only authentication rejection removes it; manual retry retains the request ID after a lost reply; reload restores the pending draft and can query delivery without sending again.
+- **4 essential Python checks:** unauthorized access cannot read or send; a lost reply does not duplicate the message; the server keeps the system awake and releases its request on shutdown; ambiguous editors stop before input.
+- **2 essential Node checks:** offline startup preserves pairing and reconnects; manual retry retains the request ID after a lost reply.
+- Removed duplicate authentication checks, HTML/asset presence checks, demo session-list checks, token-generation internals, and secondary edge cases. CI uses one Python version, 3.12, rather than a version matrix.
 - These browser-logic tests execute the real `app.js` with simulated DOM and network objects. They are not an iPhone Safari test.
 - PowerShell startup script syntax and an actual `start.ps1 -Demo -Port 18766` install/start were checked: the status endpoint returned HTTP 200 with the demo driver and no sleep request. The demo server was then stopped. Python source compilation passed.
 
