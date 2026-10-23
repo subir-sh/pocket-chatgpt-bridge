@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="theme-color" content="#11151c" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <link rel="manifest" href="/assets/manifest.webmanifest" />
+  <link rel="stylesheet" href="/assets/style.css" />
+  <title>Pocket ChatGPT Bridge · Remote Controller</title>
+</head>
+<body>
+  <div id="app">
+    <header class="topbar">
+      <div><strong>Pocket ChatGPT Bridge</strong><div id="connection" class="muted">연결 대기</div></div>
+      <button id="settingsButton" title="연결 설정" aria-label="연결 설정">⚙</button>
+    </header>
+    <div id="pairing" class="pairing">
+      <div class="panel">
+        <h2>노트북에 연결</h2>
+        <p>노트북의 실행 창에 나타난 pairing token을 입력해 주세요. ChatGPT 계정 로그인이 아닙니다.</p>
+        <input id="pairToken" type="password" placeholder="Pairing token" autocomplete="off" />
+        <button class="primary" id="pairButton">연결하기</button>
+        <div id="pairError" class="error"></div>
+      </div>
+    </div>
+    <main id="workspace" hidden>
+      <nav class="tabs" aria-label="View selector">
+        <button id="showSessions" class="active">세션</button><button id="showPreview">화면</button>
+      </nav>
+      <section id="sessionsPane" class="pane">
+        <div class="bar"><h2>데스크톱 세션</h2><button id="refreshSessions">↻ 새로고침</button></div>
+        <p class="hint">UIA로 보이는 사이드바 항목을 탐색합니다. 앱 버전에 따라 세션 이외 항목이 포함될 수 있습니다.</p>
+        <input id="sessionSearch" placeholder="현재 읽은 항목 필터" aria-label="세션 목록 검색" />
+        <div id="sessionList" class="session-list"></div>
+        <div class="bar"><button id="scrollSideUp">↑ 사이드바</button><button id="scrollSideDown">↓ 사이드바</button></div>
+        <button id="newSession" class="secondary wide">＋ 새 로컬 세션 시도</button>
+        <div id="sessionNote" class="muted"></div>
+      </section>
+      <section id="previewPane" class="pane" hidden>
+        <div class="bar"><h2>노트북 화면</h2><button id="activateDesktop">창 활성화</button><button id="refreshPreview">↻ 새로고침</button></div>
+        <p class="hint">ChatGPT 창이 전면에 있을 때만 표시합니다. 화면을 탭하면 해당 지점을 클릭합니다.</p>
+        <div class="preview-wrap" id="previewWrap"><img id="previewImage" alt="ChatGPT 데스크톱 창 캡처" /><div id="previewPlaceholder">화면 연결 대기</div></div>
+        <div class="bar controls"><button id="scrollUp">↑ 위로</button><button id="scrollDown">↓ 아래로</button><button id="zoomOut" title="화면 축소">− 축소</button><button id="zoomIn" title="화면 확대">＋ 확대</button></div>
+        <label class="switch"><input id="autoPreview" type="checkbox" checked /> 2초마다 자동 갱신</label>
+      </section>
+    </main>
+    <div id="pendingPanel" class="pending-panel" hidden>
+      <p id="pendingNote">전송 결과를 확인하고 있습니다.</p>
+      <button id="checkPending" type="button">전송 결과 확인</button>
+      <button id="clearPending" type="button">화면 확인 후 새로 작성</button>
+    </div>
+    <form id="composer" hidden>
+      <textarea id="message" placeholder="노트북의 현재 채팅으로 전송" rows="2" maxlength="12000" aria-label="메시지"></textarea>
+      <button id="sendButton" type="submit" class="primary">전송</button>
+    </form>
+    <div id="toast" aria-live="polite"></div>
+  </div>
+  <script src="/assets/app.js" defer></script>
+</body>
+</html>

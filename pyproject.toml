@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pocket-chatgpt-bridge"
+version = "0.2.0"
+description = "Self-hosted iPhone remote input and view controller for the Windows ChatGPT desktop app"
+requires-python = ">=3.10"
+dependencies = [
+  "fastapi>=0.115,<1",
+  "uvicorn>=0.30,<1",
+  "pydantic>=2,<3",
+  "pillow>=10,<13",
+]
+
+[project.optional-dependencies]
+windows = ["pywinauto>=0.6.9,<1", "pywin32>=306", "pyautogui>=0.9.54", "pyperclip>=1.9", "psutil>=5.9,<9"]
+test = ["pytest>=8,<10", "httpx>=0.27,<1"]
+
+[project.scripts]
+pocket-bridge = "remote_bridge.app:main"
+chatgpt-remote = "remote_bridge.app:main"
+
+[tool.setuptools]
+packages = ["remote_bridge"]
+
+[tool.setuptools.package-data]
+remote_bridge = ["static/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
