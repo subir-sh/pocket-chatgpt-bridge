@@ -14,24 +14,30 @@
   <div id="app">
     <header class="topbar">
       <div><strong>Pocket ChatGPT Bridge</strong><div id="connection" class="muted">연결 대기</div></div>
-      <button id="settingsButton" title="연결 설정" aria-label="연결 설정">⚙</button>
+      <button id="settingsButton" title="저장된 연결 해제" aria-label="저장된 연결 해제">연결 해제</button>
     </header>
     <div id="pairing" class="pairing">
       <div class="panel">
-        <h2>노트북에 연결</h2>
-        <p>노트북의 실행 창에 나타난 pairing token을 입력해 주세요. ChatGPT 계정 로그인이 아닙니다.</p>
-        <input id="pairToken" type="password" placeholder="Pairing token" autocomplete="off" />
-        <button class="primary" id="pairButton">연결하기</button>
+        <h2>노트북의 QR 코드를 스캔해 주세요</h2>
+        <p>아이폰의 기본 카메라를 열고 노트북 실행 창의 QR 코드를 비추세요. 화면에 뜨는 링크를 누르면 인증까지 자동으로 끝납니다.</p>
+        <p>아이폰의 Tailscale은 노트북과 같은 계정으로 연결해 두세요.</p>
+        <details><summary>직접 연결하기</summary>
+          <p>QR을 사용할 수 없을 때만 노트북의 고급 연결 정보에 있는 연결 키를 입력하세요.</p>
+          <input id="pairToken" type="password" placeholder="연결 키" autocomplete="off" />
+          <button class="primary" id="pairButton">연결하기</button>
+        </details>
         <div id="pairError" class="error"></div>
       </div>
     </div>
     <main id="workspace" hidden>
+      <p class="hint connection-hint">연결이 저장됐어요. Safari에서 즐겨찾기해 두면 다음부터 바로 열 수 있어요.</p>
+      <div class="bar brightness-controls"><span>노트북 밝기</span><button id="dimLaptop">최소로 낮추기</button><button id="restoreLaptop">원래대로</button></div>
       <nav class="tabs" aria-label="View selector">
         <button id="showSessions" class="active">세션</button><button id="showPreview">화면</button>
       </nav>
       <section id="sessionsPane" class="pane">
         <div class="bar"><h2>데스크톱 세션</h2><button id="refreshSessions">↻ 새로고침</button></div>
-        <p class="hint">UIA로 보이는 사이드바 항목을 탐색합니다. 앱 버전에 따라 세션 이외 항목이 포함될 수 있습니다.</p>
+        <p class="hint">노트북에서 이어 쓸 대화를 고르세요. 목록에 없으면 ‘화면’ 탭에서 직접 선택할 수 있어요.</p>
         <input id="sessionSearch" placeholder="현재 읽은 항목 필터" aria-label="세션 목록 검색" />
         <div id="sessionList" class="session-list"></div>
         <div class="bar"><button id="scrollSideUp">↑ 사이드바</button><button id="scrollSideDown">↓ 사이드바</button></div>

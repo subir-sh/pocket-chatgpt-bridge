@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 
 from .engine import BridgeError, DemoBridge, WindowsBridge
 from .power import SleepGuard
+from .display import BrightnessControl
 
 
 def default_token_file() -> Path:
@@ -67,6 +68,10 @@ class Scroll(BaseModel):
     sidebar: bool = False
 
 
+class BrightnessRequest(BaseModel):
+    dimmed: bool
+
+
 def create_app(driver=None, token: str | None = None, *, prevent_sleep: bool = False, sleep_guard_factory=SleepGuard) -> FastAPI:
     token = token or load_or_create_token(default_token_file())
     driver = driver if driver is not None else WindowsBridge()
@@ -84,6 +89,7 @@ def create_app(driver=None, token: str | None = None, *, prevent_sleep: bool = F
 
     app = FastAPI(title="Pocket ChatGPT Bridge", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
     app.state.driver = driver
+    brightness = BrightnessControl()
     server_instance = secrets.token_urlsafe(18)
     # Idempotent send requests reduce accidental duplicated messages on retry.
     sent: dict[str, dict[str, Any]] = {}
@@ -170,6 +176,15 @@ def create_app(driver=None, token: str | None = None, *, prevent_sleep: bool = F
 
     @app.post("/api/scroll",dependencies=[Depends(auth)])
     def scroll(req:Scroll):return driver.scroll(req.amount,req.sidebar)
+
+    @app.post("/api/brightness", dependencies=[Depends(auth)])
+    def change_brightness(req: BrightnessRequest):
+        if isinstance(driver, DemoBridge):
+            return {"dimmed": False, "note": "미리보기 모드에서는 실제 밝기를 바꾸지 않아요."}
+        try:
+            return brightness.set_dimmed(req.dimmed)
+        except Exception as exc:
+            raise HTTPException(409, "밝기를 조절하지 못했어요. 노트북 화면의 밝기 조절 지원을 확인해 주세요.") from exc
 
     static_path = Path(__file__).with_name("static")
     @app.get("/")

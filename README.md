@@ -12,9 +12,11 @@ Windows 10/11 and a signed-in ChatGPT Desktop app are required. The standalone *
 2. Double-click `PocketChatGPTBridge.exe`. It opens ChatGPT if needed, starts the bridge and sleep guard, installs Tailscale if missing, connects it, and configures private HTTPS.
 3. On first run, approve the Windows installer and complete Tailscale login / HTTPS consent in the browser opened by the launcher. Existing login state is reused later.
 4. Install Tailscale on the iPhone and sign in with the same Tailscale account. Phone installation and login must be completed on the phone.
-5. Open the launcher's address or scan its QR code in Safari and enter the pairing token displayed in the launcher. Optionally use Share → Add to Home Screen.
+5. **Point the iPhone's Camera at the launcher's QR code and tap the link.** The page authenticates automatically. Safari remembers the connection; bookmark the page for later use. Manual token entry is only an advanced fallback.
 
 Keep the launcher open while using the bridge. Closing it stops its server and sleep guard; it does not stop or sign out Tailscale. The token remains outside the repository at `%LOCALAPPDATA%\ChatGPTRemoteController\pairing-token.txt`. Windows lock state and ChatGPT login are not bypassed.
+
+The QR contains the private credential in a URL fragment, which is never sent to the server and is removed from the address bar immediately. Verified credentials are remembered in Safari `localStorage`; Disconnect clears them. Private browsing or clearing website data may require another scan. Pending messages remain in `sessionStorage`.
 
 For source development, Python 3.10+ or uv is still required. `./start.ps1` installs and runs only the server; Tailscale automation is part of the EXE launcher. Build the EXE with `./build-exe.ps1` on Windows with working GUI support. The build script installs `.[windows,desktop]` and creates a single executable in `dist` and the project root.
 
@@ -26,12 +28,13 @@ The server binds to `127.0.0.1`; Tailscale Serve supplies private-network HTTPS.
 - **New local session:** open a new composer, then explicitly select **On this computer / 내 컴퓨터에서** in the execution-location menu. The first prompt creates the conversation. Unknown controls cause an error without sending a message.
 - **Send:** find the composer with UIA, paste Unicode and press Enter. Coordinate fallback is off by default. Clear existing drafts and enable Enter-to-send in ChatGPT.
 - **Preview:** read the foreground window as JPEG, zoom, scroll, or click a location. UIA response-text extraction is not implemented.
+- **Laptop brightness:** set a supported built-in panel to 0% or restore its previous brightness. This does not power off the display or lock Windows; 0% may still emit light. No brightness changes occur merely because Tailscale is connected. Demo mode never changes real brightness.
 
 ## Reconnection and uncertain sends
 
 Temporary network errors retain the token and trigger reconnection. A pending message keeps its request ID across page reloads in `sessionStorage`. After a lost response, retrying the same text uses the same ID. **전송 결과 확인** queries the server without typing again. Only select **화면 확인 후 새로 작성** after checking the desktop preview; that permits a fresh send.
 
-The server remembers up to 2,000 request IDs in memory and refuses new IDs at capacity. Restarting clears that memory; the mobile client detects the new server instance and refuses to replay an old pending message blindly. Neither tokens nor pending text are permanent browser records: keep your pairing token available if the browser session ends.
+The server remembers up to 2,000 request IDs in memory and refuses new IDs at capacity. Restarting clears that memory; the mobile client detects the new server instance and refuses to replay an old pending message blindly. Credentials persist until disconnected or website data is cleared. Pending text stays only in the current browser session.
 
 ## Power behavior
 

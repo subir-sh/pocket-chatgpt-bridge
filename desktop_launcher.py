@@ -337,51 +337,62 @@ class Launcher:
         self.events = queue.Queue()
         self.setup = None
         self.qr_image = None
+        self.connection_url = ""
         root.title("Pocket ChatGPT Bridge")
-        root.geometry("680x730")
-        root.minsize(620, 690)
+        root.geometry("680x800")
+        root.minsize(620, 760)
         root.configure(bg="#f5f6f8")
         style = ttk.Style()
         style.theme_use("clam")
         style.configure("TFrame", background="#f5f6f8")
         style.configure("TLabel", background="#f5f6f8", font=("맑은 고딕", 10))
         style.configure("TButton", font=("맑은 고딕", 10), padding=(12, 7))
-        frame = ttk.Frame(root, padding=28)
+        frame = ttk.Frame(root, padding=24)
         frame.pack(fill="both", expand=True)
         ttk.Label(frame, text="Pocket ChatGPT Bridge", font=("맑은 고딕", 21, "bold")).pack(anchor="w")
-        ttk.Label(frame, text="노트북의 ChatGPT를 폰에서 이어 쓰세요.").pack(anchor="w", pady=(6, 20))
+        ttk.Label(frame, text="이 창을 켜두면 밖에서도 아이폰으로 ChatGPT를 쓸 수 있어요.").pack(anchor="w", pady=(6, 16))
         self.status = tk.StringVar(value="시작 준비 중…")
         ttk.Label(frame, textvariable=self.status, wraplength=600,
                   font=("맑은 고딕", 11, "bold")).pack(anchor="w", pady=(0, 12))
         self.progress = ttk.Progressbar(frame, mode="indeterminate")
         self.progress.pack(fill="x", pady=(0, 18))
-        ttk.Label(frame, text="1  폰 Safari에서 아래 주소를 여세요", font=("맑은 고딕", 11, "bold")).pack(anchor="w")
-        self.url = tk.StringVar()
-        ttk.Entry(frame, textvariable=self.url, state="readonly").pack(fill="x", pady=(8, 6))
-        actions = ttk.Frame(frame)
-        actions.pack(fill="x")
-        self.copy_url = ttk.Button(actions, text="주소 복사", command=lambda: self.copy(self.url.get()), state="disabled")
-        self.copy_url.pack(side="left")
-        self.open_url = ttk.Button(actions, text="노트북에서 열기", command=lambda: webbrowser.open(self.url.get()), state="disabled")
-        self.open_url.pack(side="left", padx=8)
+        ttk.Label(frame, text="처음 한 번만 · 아이폰 준비", font=("맑은 고딕", 11, "bold")).pack(anchor="w")
+        ttk.Label(frame, text="아이폰 App Store에서 Tailscale 설치 → 노트북에서 쓴 Tailscale 계정으로\n"
+                  "로그인 → 연결 켜기. ChatGPT 계정을 바꾸는 과정은 아니에요.",
+                  wraplength=600).pack(anchor="w", pady=(6, 20))
+        ttk.Label(frame, text="아이폰의 기본 카메라로 아래 QR 코드를 비추세요", font=("맑은 고딕", 12, "bold")).pack(anchor="w")
+        ttk.Label(frame, text="카메라에 뜨는 링크를 누르면 바로 연결돼요. 연결 키를 입력할 필요 없어요.",
+                  wraplength=600).pack(anchor="w", pady=(6, 0))
         self.qr = ttk.Label(frame, text="연결 준비가 끝나면 QR 코드가 표시됩니다.", anchor="center")
-        self.qr.pack(pady=12)
-        ttk.Label(frame, text="2  폰에 인증 토큰을 입력하고 연결하세요", font=("맑은 고딕", 11, "bold")).pack(anchor="w")
+        self.qr.pack(pady=14)
+        ttk.Label(frame, text="다음부터는 Safari 즐겨찾기로 열면 돼요. 이 폰의 연결은 자동으로 기억해요.",
+                  wraplength=600).pack(anchor="w", pady=(0, 12))
+        self.details = ttk.Frame(frame)
+        self.details_button = ttk.Button(frame, text="QR 대신 링크로 연결 / 고급 정보", command=self.toggle_details)
+        self.details_button.pack(anchor="w", pady=(0, 10))
+        self.url = tk.StringVar()
+        ttk.Entry(self.details, textvariable=self.url, state="readonly").pack(fill="x", pady=(0, 6))
+        actions = ttk.Frame(self.details)
+        actions.pack(fill="x")
+        self.copy_url = ttk.Button(actions, text="자동 연결 링크 복사", command=lambda: self.copy(self.connection_url), state="disabled")
+        self.copy_url.pack(side="left")
+        self.open_url = ttk.Button(actions, text="노트북에서 확인", command=lambda: webbrowser.open(self.connection_url), state="disabled")
+        self.open_url.pack(side="left", padx=8)
+        ttk.Label(self.details, text="직접 입력용 연결 키 (QR을 사용하면 필요 없어요)").pack(anchor="w", pady=(10, 0))
         self.token = tk.StringVar()
-        token_row = ttk.Frame(frame)
+        token_row = ttk.Frame(self.details)
         token_row.pack(fill="x", pady=(8, 12))
         self.token_entry = ttk.Entry(token_row, textvariable=self.token, state="readonly", show="•")
         self.token_entry.pack(side="left", fill="x", expand=True)
-        self.copy_token = ttk.Button(token_row, text="토큰 복사", command=lambda: self.copy(self.token.get()), state="disabled")
+        self.copy_token = ttk.Button(token_row, text="연결 키 복사", command=lambda: self.copy(self.token.get()), state="disabled")
         self.copy_token.pack(side="left", padx=(8, 0))
         self.show_token = tk.BooleanVar()
-        ttk.Checkbutton(frame, text="토큰 표시", variable=self.show_token,
+        ttk.Checkbutton(self.details, text="연결 키 표시", variable=self.show_token,
                         command=lambda: self.token_entry.configure(show="" if self.show_token.get() else "•")).pack(anchor="w")
-        ttk.Label(frame, text="아이폰에도 Tailscale을 설치하고 같은 계정으로 연결해 주세요.\n"
-                  "외출할 때 이 창을 켜두고 전원 연결·덮개 열림·Windows 잠금 해제를 유지하세요.",
+        ttk.Label(frame, text="외출할 때: 이 창 켜두기 · 전원 연결 · 덮개 열림 · Windows 잠금 해제",
                   wraplength=600).pack(anchor="w", pady=(16, 12))
         bottom = ttk.Frame(frame)
-        bottom.pack(fill="x", side="bottom")
+        bottom.pack(fill="x", side="bottom", before=frame.winfo_children()[0])
         self.retry = ttk.Button(bottom, text="다시 시작", command=self.start, state="disabled")
         self.retry.pack(side="left")
         ttk.Button(bottom, text="오류 기록 열기", command=self.open_log).pack(side="left", padx=8)
@@ -396,6 +407,14 @@ class Launcher:
         self.root.clipboard_append(value)
         self.root.update_idletasks()
 
+    def toggle_details(self):
+        if self.details.winfo_manager():
+            self.details.pack_forget()
+            self.root.geometry("680x800")
+        else:
+            self.details.pack(fill="x", after=self.details_button)
+            self.root.geometry("680x1000")
+
     def open_log(self):
         log = DATA / "desktop-server.log"
         if log.exists():
@@ -406,6 +425,7 @@ class Launcher:
             self.setup.stop()
         self.url.set("")
         self.token.set("")
+        self.connection_url = ""
         self.qr.configure(image="", text="연결 준비 중…")
         for button in (self.copy_url, self.open_url, self.copy_token, self.retry):
             button.configure(state="disabled")
@@ -428,10 +448,14 @@ class Launcher:
                     import qrcode
                     from PIL import ImageTk
                     self.progress.stop()
-                    self.status.set("연결 준비 완료 · 이 창을 켜두세요")
+                    self.status.set("준비 완료 · 이제 아이폰 카메라로 아래 QR을 스캔하세요")
                     self.url.set(value[0])
                     self.token.set(value[1])
-                    image = qrcode.make(value[0], border=2).convert("RGB").resize((190, 190))
+                    self.connection_url = value[0] + "/#connect=" + value[1]
+                    qr = qrcode.QRCode(box_size=4, border=3)
+                    qr.add_data(self.connection_url)
+                    qr.make(fit=True)
+                    image = qr.make_image().convert("RGB")
                     self.qr_image = ImageTk.PhotoImage(image)
                     self.qr.configure(image=self.qr_image, text="")
                     for button in (self.copy_url, self.open_url, self.copy_token):

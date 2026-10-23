@@ -1,9 +1,32 @@
 (() => {
   'use strict';
   const $ = id => document.getElementById(id);
+  function savedToken(){
+    try{return localStorage.getItem('remote-token')||sessionStorage.getItem('remote-token')||'';}
+    catch{return sessionStorage.getItem('remote-token')||'';}
+  }
+  function rememberToken(token){
+    sessionStorage.setItem('remote-token',token);
+    try{localStorage.setItem('remote-token',token);}catch{}
+  }
+  function forgetToken(){
+    sessionStorage.removeItem('remote-token');
+    try{localStorage.removeItem('remote-token');}catch{}
+  }
+  let initialToken=savedToken();
+  if(globalThis.location?.hash){
+    const scanned=new URLSearchParams(location.hash.slice(1)).get('connect');
+    if(scanned && /^[A-Za-z0-9_-]{32,128}$/.test(scanned)){
+      if(initialToken && scanned!==initialToken)sessionStorage.removeItem('remote-pending');
+      initialToken=scanned;
+      sessionStorage.setItem('remote-token',scanned);
+    }
+    // Fragments never go to the server. Remove the credential from the address bar immediately.
+    if(scanned)history.replaceState(null,'',location.pathname+location.search);
+  }
   let pending=null;
   try{pending=JSON.parse(sessionStorage.getItem('remote-pending')||'null');}catch{sessionStorage.removeItem('remote-pending');}
-  const state = {token:sessionStorage.getItem('remote-token') || '', tab:'sessions', sessions:[], previewUrl:null, refreshing:false, zoom:1, online:false, serverInstance:null, pending};
+  const state = {token:initialToken, tab:'sessions', sessions:[], previewUrl:null, refreshing:false, zoom:1, online:false, serverInstance:null, pending};
   const toast = (message) => {
     $('toast').textContent = message;
     $('toast').classList.add('show');
@@ -22,7 +45,7 @@
     if(!response.ok){
       let detail='HTTP '+response.status;
       try { detail=(await response.json()).detail || detail; } catch{}
-      if(response.status===401)detail='Pairing token이 올바르지 않습니다.';
+      if(response.status===401)detail='저장된 연결을 사용할 수 없어요. 노트북에 표시된 QR 코드를 다시 스캔해 주세요.';
       const error=Error(detail);error.status=response.status;throw error;
     }
     return response;
@@ -39,6 +62,7 @@
   async function status(){
     try{
       const s=await data('status');
+      rememberToken(state.token);
       const reconnect=!state.online;state.online=true;state.serverInstance=s.server_instance;
       $('connection').textContent = s.connected ? ((s.foreground?'● ':'◐ ')+(s.window||'데스크톱 연결')+(s.sleep_prevention_active?' · 절전 방지 중':'')) : '○ 앱 미발견';
       $('connection').title=s.notice||'';
@@ -46,7 +70,7 @@
       return s;
     } catch(e){
       state.online=false;$('connection').textContent='○ 연결 끊김 · 재연결 중';
-      if(e.status===401){sessionStorage.removeItem('remote-token');state.token='';showPaired(false);$('pairError').textContent=e.message;}
+      if(e.status===401){forgetToken();state.token='';showPaired(false);$('pairError').textContent=e.message;}
       return null;
     }
   }
@@ -56,7 +80,7 @@
     state.token=nextToken;
     try{
       await data('status');
-      sessionStorage.setItem('remote-token',state.token);
+      rememberToken(state.token);
       showPaired(true);$('pairError').textContent='';
       await Promise.all([status(),listSessions()]);
     } catch(e){$('pairError').textContent=e.message;showPaired(false);}
@@ -141,10 +165,17 @@
     catch(e){toast(e.message);}
   }
   $('pairButton').addEventListener('click',pair);
+  async function brightness(dimmed){
+    try{const result=await data('brightness',{dimmed});toast(result.note);}
+    catch(e){toast(e.message);}
+  }
+  $('dimLaptop').addEventListener('click',()=>brightness(true));
+  $('restoreLaptop').addEventListener('click',()=>brightness(false));
   $('pairToken').addEventListener('keydown',e=>{if(e.key==='Enter')pair();});
   $('settingsButton').addEventListener('click',()=>{
     if(state.pending){toast('먼저 이전 전송 결과를 확인하거나 화면 확인 후 새로 작성을 누르세요.');return;}
-    sessionStorage.removeItem('remote-token');state.token='';$('pairToken').value='';
+    if(!confirm('이 폰에 저장된 연결을 해제할까요? 다시 연결하려면 노트북의 QR 코드를 스캔하면 됩니다.'))return;
+    forgetToken();state.token='';$('pairToken').value='';
     showPaired(false);
   });
   $('checkPending').addEventListener('click',checkPending);

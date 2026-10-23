@@ -1,5 +1,13 @@
 # Verification
 
+## QR connection and brightness — 2026-10-24
+
+- Added one focused Node check: a QR fragment supplies authentication without manual entry, the credential is removed from the URL, and a new browser session reconnects using remembered local storage. Existing offline/retry checks still pass (3 Node checks total). This is browser-logic verification, not a physical iPhone camera/Safari test.
+- Checked the real launcher layout with a sample credential: QR and exit controls are fully visible; manual credentials are hidden under advanced information.
+- Confirmed Windows WMI brightness support on this laptop. Changed 70% to 69% and restored 70%, checking the reported hardware values. The test did not set 0% or power off the display. A 0% setting is minimum brightness, not a guarantee of a black panel.
+- The brightness API requires the existing pairing credential. Demo mode does not change hardware brightness.
+- QR scanning with a physical phone and actual external-network access remain unverified.
+
 ## Windows EXE launcher — 2026-10-24
 
 - Built a single windowed `PocketChatGPTBridge.exe` with the Python interpreter, Windows input libraries, GUI, and web assets included. No external Python executable is used by the packaged app.
