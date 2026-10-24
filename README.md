@@ -1,6 +1,6 @@
 # Pocket ChatGPT Bridge
 
-Use your iPhone to control the Windows ChatGPT app left running at home. Your phone's official ChatGPT account stays separate. Prompts enter the desktop conversation and responses appear in a window preview. No OpenAI API or internal conversation database is used.
+Use your iPhone to control the Windows ChatGPT app left running at home. Your phone's official ChatGPT account stays separate. Prompts enter the desktop conversation and responses appear in a window preview. No paid model API is called. Local chat metadata is read through the documented app-server API.
 
 **[한국어 설명서](README.ko.md)** · [Actual verification and limits](TESTING.md)
 
@@ -24,11 +24,13 @@ The server binds to `127.0.0.1`; Tailscale Serve supplies private-network HTTPS.
 
 ## Using it
 
-- **Sessions:** read visible UIA sidebar candidates, filter, scroll, and select. This is not a complete conversation database or global search.
+- **Sessions:** page through local chats, including project chats, ordered by last modification through official `thread/list`. Load 100 at a time; search filters loaded titles. The app's local project metadata supplies project labels for older builds. Selection uses the documented `codex://threads/<id>` link. This does not combine ordinary ChatGPT web chats or other hosts.
 - **New local session:** open a new composer, then explicitly select **On this computer / 내 컴퓨터에서** in the execution-location menu. The first prompt creates the conversation. Unknown controls cause an error without sending a message.
 - **Send:** find the composer with UIA, paste Unicode and press Enter. Coordinate fallback is off by default. Clear existing drafts and enable Enter-to-send in ChatGPT.
-- **Preview:** read the foreground window as JPEG, zoom, scroll, or click a location. UIA response-text extraction is not implemented.
-- **Laptop brightness:** set a supported built-in panel to 0% or restore its previous brightness. This does not power off the display or lock Windows; 0% may still emit light. No brightness changes occur merely because Tailscale is connected. Demo mode never changes real brightness.
+- **Preview:** locate ChatGPT on any connected monitor, including a minimized or background window. Restore or activate it when capture/input requires it. Background GPU capture falls back to foreground capture of the target app. UIA response-text extraction is not implemented. ChatGPT must be running and Windows unlocked.
+- **Displays:** dim supported WMI/DDC panels. Disable external video output when a connected external display cannot dim, keeping the internal laptop panel active. Restore output topology and saved brightness. Separate external-output buttons are also available. This controls video output rather than a monitor's physical power switch; standby/no-signal behavior is hardware-dependent. Demo mode never changes hardware.
+
+The launcher hands the same credential to its child server and verifies an authenticated health response before showing a QR code. Native window status polling never waits for UIA traversal or capture, and UI work is serialized on one dedicated thread. Client status requests do not overlap; authentication, app availability, and transport failures have separate messages.
 
 ## Reconnection and uncertain sends
 

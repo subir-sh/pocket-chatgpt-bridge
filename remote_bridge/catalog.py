@@ -1,0 +1,124 @@
+"""Read local chat metadata through the documented app-server thread/list API."""
+import json
+import os
+from pathlib import Path
+import queue
+import re
+import shutil
+import subprocess
+import threading
+import time
+
+
+class ThreadCatalog:
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.process = None
+        self.lines = None
+        self.counter = 0
+        self.listed = {}
+
+    @staticmethod
+    def binary():
+        override = os.getenv("POCKET_CODEX_EXE")
+        if override and Path(override).is_file():
+            return override
+        root = Path(os.getenv("LOCALAPPDATA", str(Path.home() / "AppData/Local"))) / "OpenAI/Codex/bin"
+        choices = list(root.glob("*/codex.exe")) if root.exists() else []
+        if choices:
+            return str(max(choices, key=lambda path: path.stat().st_mtime))
+        found = shutil.which("codex.exe")
+        if found:
+            return found
+        raise RuntimeError("최근 대화 목록을 읽는 ChatGPT 구성 요소를 찾지 못했어요. 앱을 업데이트해 주세요.")
+
+    def close(self):
+        if self.process:
+            if self.process.poll() is None:
+                self.process.terminate()
+                try:
+                    self.process.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    self.process.kill()
+                    self.process.wait(timeout=3)
+            self.process = None
+
+    def _request(self, method, params):
+        self.counter += 1
+        request_id = self.counter
+        self.process.stdin.write(json.dumps({"id": request_id, "method": method, "params": params}) + "\n")
+        self.process.stdin.flush()
+        deadline = time.monotonic() + 12
+        while time.monotonic() < deadline:
+            try:
+                value = self.lines.get(timeout=max(.1, deadline-time.monotonic()))
+            except queue.Empty:
+                break
+            if value.get("id") == request_id:
+                if "error" in value:
+                    raise RuntimeError("ChatGPT가 대화 목록 요청을 처리하지 못했어요.")
+                return value["result"]
+        raise RuntimeError("최근 대화 목록 응답이 늦어요. 잠시 후 새로고침해 주세요.")
+
+    def _start(self):
+        if self.process and self.process.poll() is None:
+            return
+        self.lines = queue.Queue()
+        self.process = subprocess.Popen([self.binary(), "app-server"], stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, encoding="utf-8",
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        process, lines = self.process, self.lines
+        def read():
+            for line in process.stdout:
+                try:
+                    lines.put(json.loads(line))
+                except json.JSONDecodeError:
+                    pass
+        threading.Thread(target=read, name="chat-catalog", daemon=True).start()
+        self._request("initialize", {"clientInfo": {"name": "pocket_chatgpt_bridge", "version": "0.4.0"}})
+        self.process.stdin.write('{"method":"initialized"}\n')
+        self.process.stdin.flush()
+
+    def list(self, cursor=None):
+        with self.lock:
+            try:
+                self._start()
+                params = {"limit": 100, "sortKey": "updated_at", "sortDirection": "desc",
+                          "sourceKinds": ["cli", "vscode", "appServer"], "archived": False, "useStateDbOnly": True}
+                if cursor:
+                    params["cursor"] = cursor
+                result = self._request("thread/list", params)
+                # Older app builds keep project membership in their local UI metadata.
+                home = Path(os.getenv("CODEX_HOME", str(Path.home() / ".codex")))
+                try:
+                    metadata = json.loads((home / ".codex-global-state.json").read_text(encoding="utf-8"))
+                except (OSError, ValueError):
+                    metadata = {}
+                assignments = metadata.get("thread-project-assignments", {})
+                projects = metadata.get("local-projects", {})
+                items = []
+                for thread in result["data"]:
+                    title = thread.get("name") or thread.get("preview", "").split("\n", 1)[0] or "제목 없는 대화"
+                    project_id = thread.get("projectId") or assignments.get(thread["id"], {}).get("projectId")
+                    project_name = projects.get(project_id, {}).get("name") if project_id else None
+                    item = {"id": thread["id"], "title": title, "updated_at": thread.get("updatedAt"),
+                            "project": bool(project_id), "project_name": project_name, "type": "local-chat"}
+                    self.listed[item["id"]] = item
+                    items.append(item)
+                return {"items": items, "next_cursor": result.get("nextCursor"), "source": "app-server",
+                        "verified": True, "note": "프로젝트 포함 · 최근 수정한 순서"}
+            except Exception:
+                self.close()
+                raise
+
+    def open(self, thread_id):
+        if not re.fullmatch(r"[0-9a-fA-F]{8}-[0-9a-fA-F-]{27}", thread_id):
+            raise RuntimeError("대화 ID가 올바르지 않아요. 목록을 새로고침해 주세요.")
+        with self.lock:
+            if thread_id not in self.listed:
+                self._start()
+                result = self._request("thread/read", {"threadId": thread_id, "includeTurns": False})
+                thread = result["thread"]
+                self.listed[thread_id] = {"title": thread.get("name") or "선택한 대화"}
+            os.startfile("codex://threads/" + thread_id)
+            return {"selected": self.listed[thread_id]["title"]}

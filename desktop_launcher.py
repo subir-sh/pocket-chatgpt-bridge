@@ -14,6 +14,7 @@ import sys
 import threading
 import time
 import urllib.request
+import urllib.error
 import webbrowser
 
 PORT = 8765
@@ -114,8 +115,8 @@ def run_server():
     parser.add_argument("--token-file", type=Path, default=default_token_file())
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO)
-    app = create_app(DemoBridge() if args.demo else WindowsBridge(),
-                     load_or_create_token(args.token_file), prevent_sleep=not args.demo)
+    token = os.environ.pop("POCKET_BRIDGE_PAIR_TOKEN", None) or load_or_create_token(args.token_file)
+    app = create_app(DemoBridge() if args.demo else WindowsBridge(), token, prevent_sleep=not args.demo)
     uvicorn.run(app, host="127.0.0.1", port=args.port, log_config=None, access_log=False)
 
 
@@ -234,8 +235,10 @@ class Setup:
         args = [sys.executable]
         if not getattr(sys, "frozen", False):
             args.append(str(Path(__file__).resolve()))
-        self.server = subprocess.Popen(args + ["--bridge-server"], stdout=self.log, stderr=self.log,
-                                       creationflags=NO_WINDOW)
+        server_environment = os.environ.copy()
+        server_environment["POCKET_BRIDGE_PAIR_TOKEN"] = self.token
+        self.server = subprocess.Popen(args + ["--bridge-server", "--token-file", str(default_token_file())], stdout=self.log, stderr=self.log,
+                                       creationflags=NO_WINDOW, env=server_environment)
         import win32api
         handle = win32api.OpenProcess(0x0100 | 0x0001, False, self.server.pid)
         try:
@@ -247,9 +250,14 @@ class Setup:
             if self.server.poll() is not None:
                 raise RuntimeError("서버를 시작하지 못했어요. '오류 기록 열기'에서 원인을 확인해 주세요.")
             try:
-                with urllib.request.urlopen(f"http://127.0.0.1:{PORT}/", timeout=2) as response:
+                ready = urllib.request.Request(f"http://127.0.0.1:{PORT}/api/health",
+                                               headers={"X-Remote-Token": self.token})
+                with urllib.request.urlopen(ready, timeout=2) as response:
                     if response.status == 200:
                         return
+            except urllib.error.HTTPError as exc:
+                if exc.code == 401:
+                    raise RuntimeError("서버와 연결 키가 일치하지 않아 시작을 중단했어요. 기존 실행 창을 닫고 다시 시작해 주세요.") from exc
             except OSError:
                 pass
         raise RuntimeError("서버 실행이 지연되고 있어요. 다시 시작해 주세요.")
@@ -338,7 +346,7 @@ class Launcher:
         self.setup = None
         self.qr_image = None
         self.connection_url = ""
-        root.title("Pocket ChatGPT Bridge")
+        root.title("Pocket ChatGPT Bridge · v0.4.0")
         root.geometry("680x800")
         root.minsize(620, 760)
         root.configure(bg="#f5f6f8")
@@ -451,7 +459,7 @@ class Launcher:
                     self.status.set("준비 완료 · 이제 아이폰 카메라로 아래 QR을 스캔하세요")
                     self.url.set(value[0])
                     self.token.set(value[1])
-                    self.connection_url = value[0] + "/#connect=" + value[1]
+                    self.connection_url = value[0] + "/?v=0.4.0#connect=" + value[1]
                     qr = qrcode.QRCode(box_size=4, border=3)
                     qr.add_data(self.connection_url)
                     qr.make(fit=True)

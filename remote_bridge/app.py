@@ -72,6 +72,10 @@ class BrightnessRequest(BaseModel):
     dimmed: bool
 
 
+class DisplayOutputRequest(BaseModel):
+    enabled: bool
+
+
 def create_app(driver=None, token: str | None = None, *, prevent_sleep: bool = False, sleep_guard_factory=SleepGuard) -> FastAPI:
     token = token or load_or_create_token(default_token_file())
     driver = driver if driver is not None else WindowsBridge()
@@ -86,10 +90,16 @@ def create_app(driver=None, token: str | None = None, *, prevent_sleep: bool = F
         finally:
             if guard is not None:
                 guard.stop()
+            if hasattr(driver, "close"):
+                driver.close()
 
     app = FastAPI(title="Pocket ChatGPT Bridge", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
     app.state.driver = driver
     brightness = BrightnessControl()
+    def desktop_call(method, *args):
+        if hasattr(driver, "dispatch"):
+            return driver.dispatch(method, *args)
+        return getattr(driver, method)(*args)
     server_instance = secrets.token_urlsafe(18)
     # Idempotent send requests reduce accidental duplicated messages on retry.
     sent: dict[str, dict[str, Any]] = {}
@@ -121,17 +131,21 @@ def create_app(driver=None, token: str | None = None, *, prevent_sleep: bool = F
         guard = getattr(app.state, "sleep_guard", None)
         return {**details, "sleep_prevention_active": bool(guard and guard.active), "server_instance": server_instance}
 
+    @app.get("/api/health", dependencies=[Depends(auth)])
+    def health():
+        return {"ready": True, "server_instance": server_instance}
+
     @app.post("/api/activate", dependencies=[Depends(auth)])
-    def activate(): return driver.activate()
+    def activate(): return desktop_call("activate")
 
     @app.get("/api/sessions", dependencies=[Depends(auth)])
-    def sessions(): return driver.sessions()
+    def sessions(cursor: str | None = None): return driver.sessions(cursor)
 
     @app.post("/api/sessions/select", dependencies=[Depends(auth)])
-    def select(req: SessionSelection): return driver.select_session(req.id)
+    def select(req: SessionSelection): return desktop_call("select_session", req.id)
 
     @app.post("/api/sessions/new", dependencies=[Depends(auth)])
-    def new(req: NewSession): return driver.new_session(req.confirmed_local)
+    def new(req: NewSession): return desktop_call("new_session", req.confirmed_local)
 
     @app.post("/api/send", dependencies=[Depends(auth)])
     def send(req: Message):
@@ -151,7 +165,7 @@ def create_app(driver=None, token: str | None = None, *, prevent_sleep: bool = F
                 sent.pop(req.request_id)
                 raise HTTPException(503,"전송 기록 한도입니다. 미확인 전송을 확인한 뒤 브리지를 재시작하세요.")
         try:
-            result=driver.submit(req.text)
+            result=desktop_call("submit",req.text)
         except Exception:
             with sent_lock:sent[req.request_id]["state"]="uncertain"
             raise
@@ -169,13 +183,13 @@ def create_app(driver=None, token: str | None = None, *, prevent_sleep: bool = F
             return {"state":record["state"],"server_instance":server_instance,**record["response"]}
 
     @app.get("/api/preview",dependencies=[Depends(auth)])
-    def preview():return Response(driver.preview(),media_type="image/jpeg")
+    def preview():return Response(desktop_call("preview"),media_type="image/jpeg")
 
     @app.post("/api/click",dependencies=[Depends(auth)])
-    def click(req:Click):return driver.click(req.x,req.y)
+    def click(req:Click):return desktop_call("click",req.x,req.y)
 
     @app.post("/api/scroll",dependencies=[Depends(auth)])
-    def scroll(req:Scroll):return driver.scroll(req.amount,req.sidebar)
+    def scroll(req:Scroll):return desktop_call("scroll",req.amount,req.sidebar)
 
     @app.post("/api/brightness", dependencies=[Depends(auth)])
     def change_brightness(req: BrightnessRequest):
@@ -184,7 +198,16 @@ def create_app(driver=None, token: str | None = None, *, prevent_sleep: bool = F
         try:
             return brightness.set_dimmed(req.dimmed)
         except Exception as exc:
-            raise HTTPException(409, "밝기를 조절하지 못했어요. 노트북 화면의 밝기 조절 지원을 확인해 주세요.") from exc
+            raise HTTPException(409, "화면을 조절하지 못했어요. Windows 화면 설정을 확인해 주세요.") from exc
+
+    @app.post("/api/display-output", dependencies=[Depends(auth)])
+    def display_output(req: DisplayOutputRequest):
+        if isinstance(driver, DemoBridge):
+            return {"external_enabled": req.enabled, "note": "미리보기 모드에서는 화면 출력을 바꾸지 않아요."}
+        try:
+            return brightness.outputs.set_external(req.enabled)
+        except Exception as exc:
+            raise HTTPException(409, "외부 화면 출력을 변경하지 못했어요. 노트북 화면이 사용 가능한지 확인해 주세요.") from exc
 
     static_path = Path(__file__).with_name("static")
     @app.get("/")

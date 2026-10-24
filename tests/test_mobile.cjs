@@ -84,3 +84,19 @@ test('manual retry after a lost response preserves the request ID',async()=>{
   assert.equal(sends[0].server_instance,'server-1');
   assert.equal(app.storage.has('remote-pending'),false);
 });
+
+test('slow health checks do not create overlapping reconnection requests',async()=>{
+  let calls=0,resolve;
+  const app=mobile(async url=>{
+    if(url.endsWith('/sessions'))return ok({items:[]});
+    calls++;
+    return await new Promise(done=>{resolve=done;});
+  });
+  app.intervals[0]();app.intervals[0]();
+  assert.equal(calls,1);
+  resolve(status());await tick();await tick();
+  assert.match(app.node('connection').textContent,/노트북 연결됨/);
+  app.intervals[0]();
+  assert.equal(calls,2);
+  resolve(status());await tick();
+});

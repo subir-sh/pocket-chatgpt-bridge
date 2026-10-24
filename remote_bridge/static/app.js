@@ -26,7 +26,7 @@
   }
   let pending=null;
   try{pending=JSON.parse(sessionStorage.getItem('remote-pending')||'null');}catch{sessionStorage.removeItem('remote-pending');}
-  const state = {token:initialToken, tab:'sessions', sessions:[], previewUrl:null, refreshing:false, zoom:1, online:false, serverInstance:null, pending};
+  const state = {token:initialToken, tab:'sessions', sessions:[], nextCursor:null, previewUrl:null, refreshing:false, zoom:1, online:false, serverInstance:null, pending};
   const toast = (message) => {
     $('toast').textContent = message;
     $('toast').classList.add('show');
@@ -40,7 +40,7 @@
     const controller=new AbortController();opts.signal=controller.signal;
     const timer=setTimeout(()=>controller.abort(),15000);
     try { response = await fetch('/api/'+path,opts); }
-    catch {throw Error('네트워크 연결 실패: 노트북과 Tailscale 연결을 확인하세요.');}
+    catch(e){throw Error(e.name==='AbortError'?'서버 응답이 늦어요. 잠시 후 다시 확인할게요.':'노트북 서버에 접속하지 못했어요. Tailscale 연결과 노트북 실행 창을 확인해 주세요.');}
     finally{clearTimeout(timer);}
     if(!response.ok){
       let detail='HTTP '+response.status;
@@ -59,17 +59,23 @@
     $('pendingPanel').hidden=!value||!state.token;
     $('pendingNote').textContent='전송 결과가 아직 확인되지 않았습니다. 확인 전에는 같은 메시지를 새로 보내지 마세요.';
   }
-  async function status(){
+  let statusRequest=null;
+  function status(){
+    if(statusRequest)return statusRequest;
+    statusRequest=refreshStatus().finally(()=>{statusRequest=null;});
+    return statusRequest;
+  }
+  async function refreshStatus(){
     try{
       const s=await data('status');
       rememberToken(state.token);
       const reconnect=!state.online;state.online=true;state.serverInstance=s.server_instance;
-      $('connection').textContent = s.connected ? ((s.foreground?'● ':'◐ ')+(s.window||'데스크톱 연결')+(s.sleep_prevention_active?' · 절전 방지 중':'')) : '○ 앱 미발견';
+      $('connection').textContent = s.connected ? ('● 노트북 연결됨'+(s.minimized?' · 창 최소화됨':'')+(s.sleep_prevention_active?' · 절전 방지 중':'')) : ('● 서버 연결됨 · '+(s.notice||'ChatGPT 앱을 열어 주세요.'));
       $('connection').title=s.notice||'';
-      if(reconnect)await listSessions();
+      if(reconnect)listSessions();
       return s;
     } catch(e){
-      state.online=false;$('connection').textContent='○ 연결 끊김 · 재연결 중';
+      state.online=false;$('connection').textContent=e.status?'서버 응답 오류 ('+e.status+')':e.message;
       if(e.status===401){forgetToken();state.token='';showPaired(false);$('pairError').textContent=e.message;}
       return null;
     }
@@ -85,13 +91,21 @@
       await Promise.all([status(),listSessions()]);
     } catch(e){$('pairError').textContent=e.message;showPaired(false);}
   }
-  async function listSessions(){
+  let readingSessions=false;
+  async function listSessions(more=false){
+    if(readingSessions)return;
+    readingSessions=true;
     try{
-      const result=await data('sessions');
-      state.sessions=result.items||[];
-      $('sessionNote').textContent=result.note||'';
+      const cursor=more && state.nextCursor?'?cursor='+encodeURIComponent(state.nextCursor):'';
+      const result=await data('sessions'+cursor);
+      const combined=more?[...state.sessions,...(result.items||[])]:result.items||[];
+      state.sessions=[...new Map(combined.map(item=>[item.id,item])).values()];
+      state.nextCursor=result.next_cursor||null;
+      $('moreSessions').hidden=!state.nextCursor;
+      $('sessionNote').textContent=(result.note||'')+' · '+state.sessions.length+'개 불러옴';
       renderSessions();
-    } catch(e){$('sessionNote').textContent=e.message;state.sessions=[];renderSessions();}
+    } catch(e){$('sessionNote').textContent=e.message;}
+    finally{readingSessions=false;}
   }
   function renderSessions(){
     const list=$('sessionList');list.replaceChildren();
@@ -101,10 +115,10 @@
     for(const s of items){
       const b=document.createElement('button');b.type='button';
       b.textContent=s.title;
-      const tag=document.createElement('small');tag.textContent=(s.type||'UIA')+' · 항목 선택';b.append(tag);
+      const tag=document.createElement('small');
+      tag.textContent=(s.project_name||(s.project?'프로젝트 대화':'일반 대화'))+(s.updated_at?' · '+new Date(s.updated_at*1000).toLocaleString('ko-KR'): '');b.append(tag);
       b.addEventListener('click',async()=>{
-        if(!confirm('노트북에서 이 항목을 클릭할까요?\n'+s.title))return;
-        try{await data('sessions/select',{id:s.id});toast('항목을 클릭했습니다: '+s.title);await status();}
+        try{await data('sessions/select',{id:s.id});$('message').placeholder=s.title+'에 메시지 보내기';toast('대화를 열었어요: '+s.title);showTab('preview');await status();}
         catch(e){toast(e.message);}
       });
       list.append(b);
@@ -171,6 +185,14 @@
   }
   $('dimLaptop').addEventListener('click',()=>brightness(true));
   $('restoreLaptop').addEventListener('click',()=>brightness(false));
+  async function displayOutput(enabled){
+    $('externalOff').disabled=$('externalOn').disabled=true;
+    try{const result=await data('display-output',{enabled});toast(result.note);await status();await loadPreview();}
+    catch(e){toast(e.message);}
+    finally{$('externalOff').disabled=$('externalOn').disabled=false;}
+  }
+  $('externalOff').addEventListener('click',()=>displayOutput(false));
+  $('externalOn').addEventListener('click',()=>displayOutput(true));
   $('pairToken').addEventListener('keydown',e=>{if(e.key==='Enter')pair();});
   $('settingsButton').addEventListener('click',()=>{
     if(state.pending){toast('먼저 이전 전송 결과를 확인하거나 화면 확인 후 새로 작성을 누르세요.');return;}
@@ -182,7 +204,8 @@
   $('clearPending').addEventListener('click',()=>{if(confirm('노트북 화면에서 이전 메시지의 전송 여부를 확인했나요? 새 전송은 중복될 수 있습니다.'))savePending(null);});
   $('showSessions').addEventListener('click',()=>showTab('sessions'));
   $('showPreview').addEventListener('click',()=>showTab('preview'));
-  $('refreshSessions').addEventListener('click',listSessions);
+  $('refreshSessions').addEventListener('click',()=>listSessions());
+  $('moreSessions').addEventListener('click',()=>listSessions(true));
   $('sessionSearch').addEventListener('input',renderSessions);
   $('refreshPreview').addEventListener('click',loadPreview);
   $('activateDesktop').addEventListener('click',async()=>{try{await data('activate',{});await loadPreview();await status();}catch(e){toast(e.message);}});
@@ -190,8 +213,6 @@
   $('scrollDown').addEventListener('click',()=>remoteScroll(-3));
   $('zoomIn').addEventListener('click',()=>{state.zoom=Math.min(4,Math.round((state.zoom+.5)*10)/10);$('previewImage').style.width=(state.zoom*100)+'%';});
   $('zoomOut').addEventListener('click',()=>{state.zoom=Math.max(1,Math.round((state.zoom-.5)*10)/10);$('previewImage').style.width=(state.zoom*100)+'%';});
-  $('scrollSideUp').addEventListener('click',()=>remoteScroll(3,true));
-  $('scrollSideDown').addEventListener('click',()=>remoteScroll(-3,true));
   $('newSession').addEventListener('click',async()=>{
     if(!confirm('데스크톱 화면에서 현재 Work Local 모드인지 확인했나요?\nCloud 모드에서 생성한 대화는 동기화될 수 있습니다.'))return;
     try{const r=await data('sessions/new',{confirmed_local:true});toast(r.note||'새 세션 버튼을 클릭했습니다.');await listSessions();}

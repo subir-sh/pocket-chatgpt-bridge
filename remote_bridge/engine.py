@@ -12,6 +12,7 @@ import re
 import sys
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as WorkerTimeout
 from dataclasses import dataclass
 from typing import Any
 
@@ -59,7 +60,6 @@ class WindowsBridge:
         import psutil
         import pyautogui
         import pyperclip
-        from pywinauto import Desktop
         from PIL import ImageGrab
         self.win32gui = win32gui
         self.win32con = win32con
@@ -67,7 +67,11 @@ class WindowsBridge:
         self.psutil = psutil
         self.pyautogui = pyautogui
         self.pyperclip = pyperclip
-        self.desktop = Desktop(backend="uia")
+        self._desktop_local = threading.local()
+        self._selected_handle = None
+        from .catalog import ThreadCatalog
+        self.catalog = ThreadCatalog()
+        self._ui_worker = ThreadPoolExecutor(max_workers=1, thread_name_prefix="desktop-uia")
         self.ImageGrab = ImageGrab
         pyautogui.FAILSAFE = True
         pyautogui.PAUSE = 0.06
@@ -87,31 +91,48 @@ class WindowsBridge:
             except Exception:pass
         return out
 
-    def _window(self):
+    @property
+    def desktop(self):
+        if not hasattr(self._desktop_local, "desktop"):
+            import pythoncom
+            pythoncom.CoInitialize()
+            from pywinauto import Desktop
+            self._desktop_local.desktop = Desktop(backend="uia")
+        return self._desktop_local.desktop
+
+    def _window_handle(self):
+        # Health polling must not traverse UIA or wait behind a sidebar/capture operation.
         candidates = []
-        for item in self.desktop.windows():
+        def visit(handle, _):
             try:
-                label = item.window_text()
-                if re.search(self.cfg.window_re, label, re.I) and item.is_visible():
-                    _,pid=self.win32process.GetWindowThreadProcessId(item.handle)
-                    if not re.search(self.cfg.process_re,self.psutil.Process(pid).name(),re.I):
-                        continue
-                    # Exclude Chrome/Edge/other apps that might share the same title.
-                    r = item.rectangle()
-                    if r.width() >= 440 and r.height() >= 360:
-                        candidates.append(item)
+                if not self.win32gui.IsWindowVisible(handle):
+                    return
+                _, pid = self.win32process.GetWindowThreadProcessId(handle)
+                if not re.search(self.cfg.process_re, self.psutil.Process(pid).name(), re.I):
+                    return
+                left, top, right, bottom = self.win32gui.GetWindowRect(handle)
+                if self.win32gui.IsIconic(handle) or (right-left >= 440 and bottom-top >= 360):
+                    candidates.append(handle)
             except Exception:
-                continue
+                pass
+        self.win32gui.EnumWindows(visit, None)
         if not candidates:
-            raise BridgeError("ChatGPT 프로세스의 데스크톱 창을 찾지 못했습니다. 앱 실행 여부와 CHATGPT_PROCESS_RE 설정을 확인하세요.")
+            raise BridgeError("ChatGPT 앱을 찾지 못했어요. 노트북에서 앱을 열어 주세요.")
         # Never silently choose a different conversation when multiple app windows exist.
         if len(candidates) > 1:
             foreground = self.win32gui.GetForegroundWindow()
-            for c in candidates:
-                if c.handle == foreground:
-                    return c
+            if self._selected_handle in candidates:
+                return self._selected_handle
+            if foreground in candidates:
+                self._selected_handle = foreground
+                return foreground
             raise BridgeError("여러 ChatGPT 창이 열려 있습니다. 노트북에서 조작할 창을 전면에 놓으세요.")
+        self._selected_handle = candidates[0]
         return candidates[0]
+
+    def _window(self):
+        handle = self._window_handle()
+        return self.desktop.window(handle=handle).wrapper_object()
 
     def activate(self):
         with self.lock:
@@ -141,26 +162,29 @@ class WindowsBridge:
             raise BridgeError(f"UI Automation 검사 실패: {e}") from e
 
     def status(self) -> dict[str, Any]:
-        with self.lock:
-            try:
-                w = self._window()
-                return {"connected": True, "window": w.window_text(), "foreground": self.win32gui.GetForegroundWindow()==w.handle,
-                        "notice": "기존 앱 상태를 그대로 사용합니다. Local/Cloud 여부는 데스크톱 설정에서 확인하세요."}
-            except BridgeError as e:
-                return {"connected": False, "window": None, "foreground": False, "notice": str(e)}
+        try:
+            handle = self._window_handle()
+            return {"connected": True, "window": self.win32gui.GetWindowText(handle),
+                    "foreground": self.win32gui.GetForegroundWindow()==handle,
+                    "minimized": bool(self.win32gui.IsIconic(handle)),
+                    "notice": "노트북 화면과 외부 모니터 어디에 있는 창이든 연결합니다."}
+        except BridgeError as e:
+            return {"connected": False, "window": None, "foreground": False, "notice": str(e)}
 
     def _candidate_controls(self, window):
         wl, wt, wr, wb = self._rect(window)
         ww, wh = wr-wl, wb-wt
         found = []
         seen = set()
-        for control in self._all(window):
+        for control in window.descendants(control_type="ListItem"):
             try:
                 typ = control.element_info.control_type
-                # Include static text; Electron app may expose chat titles as Text.
-                if typ not in ("ListItem", "Text", "Hyperlink", "Button"):
+                if typ != "ListItem":
                     continue
                 label = control.window_text().strip()
+                if not label:
+                    label = next((x.window_text().strip() for x in control.descendants(control_type="Text")
+                                  if x.window_text().strip()), "")
                 if not label or len(label) > 110 or EXCLUDE.fullmatch(label):
                     continue
                 r = control.rectangle()
@@ -181,26 +205,31 @@ class WindowsBridge:
                 continue
         return found
 
-    def sessions(self) -> dict[str, Any]:
-        with self.lock:
-            w = self._window()
-            candidates = [x for _, x in self._candidate_controls(w)]
-            return {"items": candidates, "source": "uia-sidebar-candidates", "verified": False,
-                    "note": "UIA 사이드바 후보입니다. 실제 세션인지 확인이 필요하며 현재 화면에 보이는 항목만 나옵니다."}
+    def sessions(self, cursor=None) -> dict[str, Any]:
+        try:
+            return self.catalog.list(cursor)
+        except Exception as exc:
+            raise BridgeError(str(exc)) from exc
+
+    def close(self):
+        self.catalog.close()
+        self._ui_worker.shutdown(wait=False, cancel_futures=True)
+
+    def dispatch(self, method, *args):
+        try:
+            return self._ui_worker.submit(getattr(self, method), *args).result(timeout=25)
+        except WorkerTimeout as exc:
+            raise BridgeError("ChatGPT 화면 작업이 지연되고 있어요. 화면에서 결과를 확인해 주세요.") from exc
 
     def select_session(self, session_id: str):
         with self.lock:
-            w = self._window()
-            matches = [(control, data) for control, data in self._candidate_controls(w) if data["id"] == session_id]
-            if len(matches) != 1:
-                raise BridgeError("세션 항목이 사라졌거나 중복되었습니다. 목록을 새로고침하세요.")
-            ctl, data = matches[0]
-            self._focus(w)
             try:
-                ctl.click_input()
+                result = self.catalog.open(session_id)
+                time.sleep(.5)
+                self._focus(self._window())
+                return result
             except Exception as e:
-                raise BridgeError(f"세션 클릭 실패: {e}") from e
-            return {"selected": data["title"]}
+                raise BridgeError(f"대화를 열지 못했어요: {e}") from e
 
     def _visible_local_mode_labels(self, w):
         """Look only in the app chrome, *not* in conversation text.
@@ -239,7 +268,7 @@ class WindowsBridge:
             self._focus(w)
             rect=w.rectangle()
             buttons=[]
-            for el in self._all(w):
+            for el in w.descendants(control_type="Button"):
                 try:
                     er=el.rectangle()
                     if (el.element_info.control_type=="Button" and el.is_visible()
@@ -269,7 +298,7 @@ class WindowsBridge:
     def _wait_control(self,w,control_type,pattern,timeout=5):
         deadline=time.monotonic()+timeout
         while time.monotonic()<deadline:
-            for el in self._all(w):
+            for el in w.descendants(control_type=control_type):
                 try:
                     if el.element_info.control_type==control_type and el.is_visible() and re.search(pattern,el.window_text().strip(),re.I):
                         return el
@@ -287,7 +316,7 @@ class WindowsBridge:
             self._focus(w)
             r=w.rectangle()
             edits=[]
-            for el in self._all(w):
+            for el in w.descendants(control_type="Edit"):
                 try:
                     if el.element_info.control_type != "Edit" or not el.is_visible(): continue
                     er=el.rectangle()
@@ -365,11 +394,13 @@ class WindowsBridge:
         with self.lock:
             w=self._window()
             if self.win32gui.IsIconic(w.handle):
-                raise BridgeError("최소화된 창은 캡처할 수 없습니다.")
-            if self.win32gui.GetForegroundWindow()!=w.handle:
-                raise BridgeError("다른 앱이 전면에 있습니다. ChatGPT 창을 활성화하세요 (화면 유출 방지).")
-            bbox=self._rect(w)
-            im=self.ImageGrab.grab(bbox=bbox,all_screens=True)
+                self._focus(w)
+            # Capture the target HWND, including on secondary monitors or behind other apps.
+            im=self.ImageGrab.grab(window=w.handle)
+            if im.getbbox() is None:
+                # GPU-backed Electron windows may not implement background PrintWindow.
+                self._focus(w)
+                im=self.ImageGrab.grab(bbox=self._rect(w),all_screens=True)
             im.thumbnail((1280,1000),Image.Resampling.LANCZOS)
             buf=io.BytesIO()
             im.convert("RGB").save(buf,format="JPEG",quality=71,optimize=True)
@@ -398,7 +429,7 @@ class DemoBridge:
     def activate(self):return {"active":True}
     def status(self):
         return {"connected":True,"window":"DEMO — no ChatGPT connection","foreground":True,"notice":"Demo only; no real app is controlled."}
-    def sessions(self):
+    def sessions(self,cursor=None):
         return {"items":[{"id":_id(n,(0,0,0,0)),"title":n,"type":"Demo"} for n in self.items],"source":"demo","verified":False,"note":"Demo sessions only"}
     def select_session(self,session_id):
         for n in self.items:

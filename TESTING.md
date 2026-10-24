@@ -1,5 +1,16 @@
 # Verification
 
+## Recent chats, multi-monitor operation, and reconnection — 2026-10-24
+
+- Observed HTTP 401 from the previously running server using the persisted credential, while Tailscale itself reported Running/online. The exact origin of the old credential mismatch was not established. The launcher now explicitly hands its pairing credential to the child and requires authenticated readiness before showing a QR.
+- The documented local `thread/list` API returned 159 non-archived interactive local chats over two pages, sorted by `updated_at` descending. App metadata identified 33 project members in the first 100. Titles, chat text, and project names are not included in these public results.
+- A deep link to the pre-existing Pocket Bridge test chat was handled by the app and its exact-title ListItems were visible afterward. UIA did not expose a SelectionItem pattern, so that pattern could not independently confirm selection. No message was sent; the original chat was reopened.
+- Native window status recognized ChatGPT behind another application immediately. A background GPU HWND capture was black on this machine; automatic foreground capture returned a non-black JPEG from the external display.
+- Actually disabled external output: connected screens changed from 2 to 1, ChatGPT remained discoverable, and its preview worked. Restored the prior extended topology and verified 2 screens again; original window placement was restored.
+- Internal brightness read as 70%; the external Generic Monitor returned no DDC brightness value. Unsupported external output is disconnected instead of pretending its brightness was changed.
+- Retained four essential Python tests. Added one focused non-overlapping-health-poll check, for four Node checks total. The browser checks are simulated logic tests, not physical iPhone tests.
+- The actual v0.4.0 EXE passed authenticated health, sorted/project-tagged catalog, non-black external-display preview, and packaged GUI checks. Replaced and restarted the running Desktop EXE. Its real service returned 100 chats (33 project members), 10 successful simultaneous status checks (maximum 0.078 seconds), and the same authenticated server instance over the actual Tailscale HTTPS URL from this laptop. This is not a physical iPhone/cellular check.
+
 ## QR connection and brightness — 2026-10-24
 
 - Added one focused Node check: a QR fragment supplies authentication without manual entry, the credential is removed from the URL, and a new browser session reconnects using remembered local storage. Existing offline/retry checks still pass (3 Node checks total). This is browser-logic verification, not a physical iPhone camera/Safari test.

@@ -15,6 +15,7 @@ def test_unauthorized_access_cannot_read_or_send():
     driver=DemoBridge()
     with TestClient(create_app(driver,token=TOKEN)) as client:
         assert client.get('/api/preview').status_code==401
+        assert client.post('/api/display-output',json={'enabled':False}).status_code==401
         assert client.post('/api/send',headers={'X-Remote-Token':'wrong'},json={
             'text':'blocked','request_id':'unauthorized_01'}).status_code==401
         assert driver.messages==[]
@@ -59,7 +60,7 @@ def test_ambiguous_editor_stops_before_input():
     driver=WindowsBridge.__new__(WindowsBridge)
     driver.cfg=Config(allow_coordinate_input=False)
     driver.lock=threading.RLock()
-    driver._window=lambda:SimpleNamespace(rectangle=Rect)
+    driver._window=lambda:SimpleNamespace(rectangle=Rect,descendants=lambda **kwargs:[Editor(),Editor()])
     driver._focus=lambda window:None
     driver._all=lambda window:[Editor(),Editor()]
     with pytest.raises(BridgeError,match='UIA'):
