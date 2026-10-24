@@ -94,6 +94,10 @@ class WindowsBridge:
     @property
     def desktop(self):
         if not hasattr(self._desktop_local, "desktop"):
+            # UIA rectangles are physical pixels. Keep mouse/capture Win32 calls
+            # in that same coordinate space on mixed-scale secondary displays.
+            import ctypes
+            ctypes.windll.user32.SetThreadDpiAwarenessContext(ctypes.c_void_p(-4))
             import pythoncom
             pythoncom.CoInitialize()
             from pywinauto import Desktop
@@ -208,6 +212,19 @@ class WindowsBridge:
     def sessions(self, cursor=None) -> dict[str, Any]:
         try:
             return self.catalog.list(cursor)
+        except Exception as exc:
+            raise BridgeError(str(exc)) from exc
+
+    def submit_to(self, message, thread_id):
+        self.select_session(thread_id)
+        # Deep-link navigation may briefly remove the composer while loading.
+        if self._wait_control(self._window(), "Edit", r".*", timeout=5) is None:
+            raise BridgeError("대화 입력창을 불러오는 중이에요. 잠시 후 다시 시도해 주세요.")
+        return self.submit(message)
+
+    def history(self, thread_id, cursor=None):
+        try:
+            return self.catalog.history(thread_id, cursor)
         except Exception as exc:
             raise BridgeError(str(exc)) from exc
 
@@ -436,6 +453,18 @@ class DemoBridge:
             if _id(n,(0,0,0,0))==session_id:
                 self.current=n;return {"selected":n}
         raise BridgeError("Not found")
+    def history(self, thread_id, cursor=None):
+        if not any(_id(n,(0,0,0,0)) == thread_id for n in self.items):
+            raise BridgeError("Not found")
+        messages = [{"id": "demo-user", "role": "user", "text": "폰에서도 이전 대화를 편하게 읽을 수 있어?"},
+                    {"id": "demo-answer", "role": "assistant", "text": "네. **대화 내용을 글자로** 읽을 수 있어요.\n\n- 이전 메시지 확인\n- 긴 답변과 코드 읽기\n- 같은 대화에 이어서 질문하기\n\n```python\nprint('Hello from Pocket')\n```\n\n| 기능 | 상태 |\n| --- | --- |\n| 대화 내역 | 표시됨 |\n| 자동 갱신 | 2초 간격 |"}]
+        for i, text in enumerate(self.messages):
+            messages.extend([{"id": f"demo-u-{i}", "role": "user", "text": text},
+                             {"id": f"demo-a-{i}", "role": "assistant", "text": "테스트 답변입니다. 실제 ChatGPT에는 전송하지 않았어요."}])
+        return {"messages": messages, "next_cursor": None, "turn_status": "completed", "source": "demo"}
+    def submit_to(self, message, thread_id):
+        self.select_session(thread_id)
+        return self.submit(message)
     def new_session(self,confirmed):
         if not confirmed:raise BridgeError("Confirm local session first")
         n=f"Example {len(self.items)+1}"

@@ -75,6 +75,7 @@ test('manual retry after a lost response preserves the request ID',async()=>{
     return status();
   });
   await tick();await tick();
+  await app.node('newSession').events.click();
   app.node('message').value='밖에서 보내는 한글';
   await app.node('composer').events.submit({preventDefault(){}});
   assert.ok(app.storage.get('remote-pending'));

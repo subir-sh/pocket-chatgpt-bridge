@@ -1,5 +1,15 @@
 # Verification
 
+## Mobile conversation UI — 2026-10-24 (v0.5.0)
+
+- The official read-only `thread/turns/list` endpoint returned the existing dedicated test chat's user and assistant messages. The bridge returns these visible message types only, not reasoning or raw tool output. It does not resume a thread or call a model API to read history.
+- An initial real send failed before input because UIA did not expose a usable composer at that instant. The cause was not isolated. Added navigation readiness waiting and per-monitor DPI awareness. With the actual ChatGPT window placed on the external monitor, sent one short test prompt and read both the new user message and actual `POCKET_CHAT_UI_OK` assistant reply through history (~6.14 seconds). Restored the original chat and window placement. This demonstrates the tested external-monitor path after the changes; it does not establish which change fixed the initial failure.
+- Real WebKit browser, using Playwright's iPhone 13 device settings with an explicit 390×844 viewport: selected a chat, rendered text/Markdown/code/table, sent through the actual demo HTTP server, received a demo reply, and reloaded with authentication and chat selection intact. This is WebKit mobile emulation, not a physical iPhone, iOS Simulator, camera scan, or cellular test.
+- In the same WebKit run, mocked history pages verified older-message loading, changing assistant content without losing the reader's scroll position, and rejection of script/image/JavaScript-link payloads. A shortened viewport kept the composer visible; this does not simulate every iOS keyboard behavior. The 1280×900 layout also had no page overflow.
+- Kept the existing four Python and four Node regression checks. Extended the existing access-control check to cover the new message endpoint. Markdown dependencies are bundled locally (marked and DOMPurify), with licenses; no CDN assets are loaded by the phone.
+- Built and launched the actual v0.5.0 standalone EXE. Authenticated real history, catalog, non-black preview, and packaged GUI checks passed. Replaced and restarted the Desktop executable. The running service returned the test conversation as text locally (~0.156 seconds) and through the actual Tailscale HTTPS address from this laptop. This remains distinct from a phone/cellular test.
+- Stored history is polled every 2 seconds. The read-only server can expose a reconstructed/interrupted status for a turn owned by another process; token-by-token streaming and exact live-generation status are not established. Attachments are labeled rather than served as arbitrary local files. Interactive approvals remain in Notebook controls.
+
 ## Recent chats, multi-monitor operation, and reconnection — 2026-10-24
 
 - Observed HTTP 401 from the previously running server using the persisted credential, while Tailscale itself reported Running/online. The exact origin of the old credential mismatch was not established. The launcher now explicitly hands its pairing credential to the child and requires authenticated readiness before showing a QR.

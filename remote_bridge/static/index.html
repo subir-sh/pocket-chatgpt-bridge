@@ -2,68 +2,67 @@
 <html lang="ko">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <meta name="theme-color" content="#11151c" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,interactive-widget=resizes-content" />
+  <meta name="theme-color" content="#18191b" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <link rel="manifest" href="/assets/manifest.webmanifest" />
   <link rel="stylesheet" href="/assets/style.css" />
-  <title>Pocket ChatGPT Bridge · Remote Controller</title>
+  <title>Pocket ChatGPT Bridge</title>
 </head>
 <body>
   <div id="app">
     <header class="topbar">
-      <div><strong>Pocket ChatGPT Bridge</strong><div id="connection" class="muted">연결 대기</div></div>
-      <button id="settingsButton" title="저장된 연결 해제" aria-label="저장된 연결 해제">연결 해제</button>
+      <div class="identity"><strong>Pocket <span>ChatGPT Bridge</span></strong><div id="connection" class="muted">연결 대기</div></div>
+      <details class="settings"><summary aria-label="설정">설정</summary><div class="settings-menu">
+        <h2>노트북 화면 설정</h2>
+        <p class="muted">전체 모니터 밝기</p><div class="bar"><button id="dimLaptop">최소로 낮추기</button><button id="restoreLaptop">원래대로</button></div>
+        <p class="muted">외부 모니터 출력</p><div class="bar"><button id="externalOff">끄기</button><button id="externalOn">다시 켜기</button></div>
+        <button id="settingsButton" class="wide">이 폰의 연결 해제</button>
+      </div></details>
     </header>
     <div id="pairing" class="pairing">
       <div class="panel">
-        <h2>노트북의 QR 코드를 스캔해 주세요</h2>
-        <p>아이폰의 기본 카메라를 열고 노트북 실행 창의 QR 코드를 비추세요. 화면에 뜨는 링크를 누르면 인증까지 자동으로 끝납니다.</p>
-        <p>아이폰의 Tailscale은 노트북과 같은 계정으로 연결해 두세요.</p>
-        <details><summary>직접 연결하기</summary>
-          <p>QR을 사용할 수 없을 때만 노트북의 고급 연결 정보에 있는 연결 키를 입력하세요.</p>
-          <input id="pairToken" type="password" placeholder="연결 키" autocomplete="off" />
-          <button class="primary" id="pairButton">연결하기</button>
-        </details>
-        <div id="pairError" class="error"></div>
+        <div class="eyebrow">처음 연결하기</div><h1>집에 있는 대화를<br>폰에서 그대로.</h1>
+        <p>아이폰 카메라로 노트북 실행 창의 QR 코드를 비추고, 뜨는 링크를 누르세요. 인증까지 자동으로 끝나요.</p>
+        <p class="muted">아이폰의 Tailscale은 노트북과 같은 계정으로 연결해 두세요.</p>
+        <details><summary>직접 연결하기</summary><p>노트북의 고급 연결 정보에 있는 연결 키를 입력하세요.</p>
+          <input id="pairToken" type="password" placeholder="연결 키" autocomplete="off" /><button class="primary" id="pairButton">연결하기</button>
+        </details><div id="pairError" class="error" role="alert"></div>
       </div>
     </div>
     <main id="workspace" hidden>
-      <p class="hint connection-hint">연결이 저장됐어요. Safari에서 즐겨찾기해 두면 다음부터 바로 열 수 있어요.</p>
-      <div class="bar brightness-controls"><span>전체 모니터 밝기</span><button id="dimLaptop">최소로 낮추기</button><button id="restoreLaptop">원래대로</button></div>
-      <div class="bar brightness-controls"><span>외부 모니터 출력</span><button id="externalOff">끄기</button><button id="externalOn">다시 켜기</button></div>
-      <nav class="tabs" aria-label="View selector">
-        <button id="showSessions" class="active">세션</button><button id="showPreview">화면</button>
+      <nav class="tabs" aria-label="화면 선택">
+        <button id="showSessions" class="active">☰ 대화 목록</button><button id="showChat">대화</button><button id="showPreview">노트북 조작</button>
       </nav>
       <section id="sessionsPane" class="pane">
-        <div class="bar"><h2>최근 수정한 대화</h2><button id="refreshSessions">↻ 새로고침</button></div>
-        <p class="hint">프로젝트에 속한 대화도 함께 표시합니다. 가장 최근 수정한 대화부터 정렬돼요.</p>
-        <input id="sessionSearch" placeholder="불러온 대화에서 검색" aria-label="대화 검색" />
-        <div id="sessionList" class="session-list"></div>
-        <button id="moreSessions" class="wide" hidden>이전 대화 더 불러오기</button>
-        <button id="newSession" class="secondary wide">＋ 새 로컬 대화</button>
-        <div id="sessionNote" class="muted"></div>
+        <div class="bar"><h1>최근 대화</h1><button id="refreshSessions" aria-label="대화 목록 새로고침">↻</button><button id="newSession">＋ 새 대화</button></div>
+        <p class="hint">프로젝트 포함 · 최근 수정한 순서</p>
+        <input id="sessionSearch" placeholder="대화 검색" aria-label="대화 검색" />
+        <div id="sessionList" class="session-list"></div><button id="moreSessions" class="wide" hidden>이전 대화 더 보기</button><div id="sessionNote" class="muted"></div>
+      </section>
+      <section id="chatPane" class="chat-pane" hidden>
+        <header class="chat-header"><div><h1 id="chatTitle">대화를 선택해 주세요</h1><p id="chatState" class="muted">대화 목록에서 이어갈 채팅을 골라 주세요.</p></div><button id="refreshChat" aria-label="대화 새로고침">↻</button></header>
+        <div id="messageScroll" class="message-scroll" tabindex="0" aria-label="대화 내역">
+          <button id="olderMessages" class="older" hidden>이전 메시지 더 보기</button>
+          <div id="chatEmpty" class="empty-state"><span class="empty-symbol">↗</span><h2>어디서든, 이어서.</h2><p>기존 대화를 선택하면<br>메시지와 답변이 여기에 표시돼요.</p></div>
+          <div id="messageList" class="message-list" role="log" aria-label="메시지"></div>
+          <div id="replyState" class="reply-state" hidden></div>
+        </div>
+        <button id="jumpLatest" class="jump-latest" hidden>새 메시지 ↓</button>
       </section>
       <section id="previewPane" class="pane" hidden>
-        <div class="bar"><h2>노트북 화면</h2><button id="activateDesktop">창 활성화</button><button id="refreshPreview">↻ 새로고침</button></div>
-        <p class="hint">어느 모니터에 있든 ChatGPT 창을 표시합니다. 최소화된 창은 복원합니다. 화면을 탭하면 해당 지점을 클릭합니다.</p>
+        <div class="bar"><h1>노트북 조작</h1><button id="activateDesktop">창 활성화</button><button id="refreshPreview" aria-label="노트북 화면 새로고침">↻</button></div>
+        <p class="hint">승인 창 등 노트북을 직접 조작할 때 사용하세요. 화면을 탭하면 해당 위치를 클릭합니다.</p>
         <div class="preview-wrap" id="previewWrap"><img id="previewImage" alt="ChatGPT 데스크톱 창 캡처" /><div id="previewPlaceholder">화면 연결 대기</div></div>
-        <div class="bar controls"><button id="scrollUp">↑ 위로</button><button id="scrollDown">↓ 아래로</button><button id="zoomOut" title="화면 축소">− 축소</button><button id="zoomIn" title="화면 확대">＋ 확대</button></div>
-        <label class="switch"><input id="autoPreview" type="checkbox" checked /> 2초마다 자동 갱신</label>
+        <div class="bar controls"><button id="scrollUp">↑ 위로</button><button id="scrollDown">↓ 아래로</button><button id="zoomOut">− 축소</button><button id="zoomIn">＋ 확대</button></div>
+        <label class="switch"><input id="autoPreview" type="checkbox" checked /> 화면 자동 갱신</label>
       </section>
     </main>
-    <div id="pendingPanel" class="pending-panel" hidden>
-      <p id="pendingNote">전송 결과를 확인하고 있습니다.</p>
-      <button id="checkPending" type="button">전송 결과 확인</button>
-      <button id="clearPending" type="button">화면 확인 후 새로 작성</button>
-    </div>
-    <form id="composer" hidden>
-      <textarea id="message" placeholder="노트북의 현재 채팅으로 전송" rows="2" maxlength="12000" aria-label="메시지"></textarea>
-      <button id="sendButton" type="submit" class="primary">전송</button>
-    </form>
-    <div id="toast" aria-live="polite"></div>
+    <div id="pendingPanel" class="pending-panel" hidden><p id="pendingNote">전송 결과를 확인하고 있습니다.</p><button id="checkPending" type="button">전송 결과 확인</button><button id="clearPending" type="button">대화 확인 후 새로 작성</button></div>
+    <form id="composer" hidden><div class="input-wrap"><textarea id="message" placeholder="메시지 보내기" rows="1" maxlength="12000" aria-label="메시지"></textarea><button id="sendButton" type="submit" class="primary" aria-label="메시지 전송">↑</button></div><div class="composer-note">노트북의 ChatGPT에서 이어지는 대화</div></form>
+    <div id="toast" role="status" aria-live="polite"></div>
   </div>
-  <script src="/assets/app.js" defer></script>
+  <script src="/assets/marked.js" defer></script><script src="/assets/purify.js" defer></script><script src="/assets/app.js" defer></script>
 </body>
 </html>

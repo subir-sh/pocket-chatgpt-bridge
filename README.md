@@ -1,6 +1,6 @@
 # Pocket ChatGPT Bridge
 
-Use your iPhone to control the Windows ChatGPT app left running at home. Your phone's official ChatGPT account stays separate. Prompts enter the desktop conversation and responses appear in a window preview. No paid model API is called. Local chat metadata is read through the documented app-server API.
+Use your iPhone to control the Windows ChatGPT app left running at home. Your phone's official ChatGPT account stays separate. Prompts enter the desktop conversation and responses appear as readable mobile chat messages. No paid model API is called. Local chat metadata and stored messages are read through the documented app-server API.
 
 **[한국어 설명서](README.ko.md)** · [Actual verification and limits](TESTING.md)
 
@@ -25,9 +25,10 @@ The server binds to `127.0.0.1`; Tailscale Serve supplies private-network HTTPS.
 ## Using it
 
 - **Sessions:** page through local chats, including project chats, ordered by last modification through official `thread/list`. Load 100 at a time; search filters loaded titles. The app's local project metadata supplies project labels for older builds. Selection uses the documented `codex://threads/<id>` link. This does not combine ordinary ChatGPT web chats or other hosts.
+- **Conversation:** selecting a chat opens its user messages and assistant replies as text, with Markdown, code-copy buttons, and horizontally scrollable tables. Stored content refreshes every 2 seconds; this is polling, not a direct token stream. Older messages load in pages of 12 turns. Reading older content preserves the scroll position. The selected chat survives reload. Attachment contents and app-specific interactive widgets remain in the desktop view.
 - **New local session:** open a new composer, then explicitly select **On this computer / 내 컴퓨터에서** in the execution-location menu. The first prompt creates the conversation. Unknown controls cause an error without sending a message.
-- **Send:** find the composer with UIA, paste Unicode and press Enter. Coordinate fallback is off by default. Clear existing drafts and enable Enter-to-send in ChatGPT.
-- **Preview:** locate ChatGPT on any connected monitor, including a minimized or background window. Restore or activate it when capture/input requires it. Background GPU capture falls back to foreground capture of the target app. UIA response-text extraction is not implemented. ChatGPT must be running and Windows unlocked.
+- **Send:** reopen the selected conversation before input, wait for its composer, then find the composer with UIA, paste Unicode and press Enter. Coordinate fallback is off by default. Clear existing drafts and enable Enter-to-send in ChatGPT.
+- **Preview:** locate ChatGPT on any connected monitor, including a minimized or background window. Restore or activate it when capture/input requires it. Background GPU capture falls back to foreground capture of the target app. Message reading uses official [`thread/turns/list`](https://learn.chatgpt.com/docs/app-server#list-thread-turns); screenshots are a separate **Notebook controls** view for app approvals and direct interaction. The UI worker uses per-monitor DPI awareness for mixed-scale displays. ChatGPT must be running and Windows unlocked.
 - **Displays:** dim supported WMI/DDC panels. Disable external video output when a connected external display cannot dim, keeping the internal laptop panel active. Restore output topology and saved brightness. Separate external-output buttons are also available. This controls video output rather than a monitor's physical power switch; standby/no-signal behavior is hardware-dependent. Demo mode never changes hardware.
 
 The launcher hands the same credential to its child server and verifies an authenticated health response before showing a QR code. Native window status polling never waits for UIA traversal or capture, and UI work is serialized on one dedicated thread. Client status requests do not overlap; authentication, app availability, and transport failures have separate messages.

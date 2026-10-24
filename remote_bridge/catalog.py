@@ -75,7 +75,7 @@ class ThreadCatalog:
                 except json.JSONDecodeError:
                     pass
         threading.Thread(target=read, name="chat-catalog", daemon=True).start()
-        self._request("initialize", {"clientInfo": {"name": "pocket_chatgpt_bridge", "version": "0.4.0"}})
+        self._request("initialize", {"clientInfo": {"name": "pocket_chatgpt_bridge", "version": "0.5.0"}})
         self.process.stdin.write('{"method":"initialized"}\n')
         self.process.stdin.flush()
 
@@ -111,9 +111,56 @@ class ThreadCatalog:
                 self.close()
                 raise
 
-    def open(self, thread_id):
+    def history(self, thread_id, cursor=None):
+        """Read conversation history without resuming or generating a turn."""
+        self.validate_id(thread_id)
+        with self.lock:
+            try:
+                self._start()
+                params = {"threadId": thread_id, "limit": 12, "sortDirection": "desc", "itemsView": "full"}
+                if cursor:
+                    params["cursor"] = cursor
+                result = self._request("thread/turns/list", params)
+                messages = []
+                turns = result.get("data", [])
+                for turn in reversed(turns):
+                    for item in turn.get("items", []):
+                        kind = item.get("type")
+                        if kind not in ("userMessage", "agentMessage"):
+                            continue
+                        attachments = []
+                        if kind == "userMessage":
+                            texts = []
+                            for part in item.get("content", []):
+                                if part.get("type") == "text":
+                                    texts.append(part.get("text", ""))
+                                elif part.get("type") in ("image", "localImage"):
+                                    attachments.append("이미지 첨부")
+                                else:
+                                    attachments.append(part.get("name") or "첨부 항목")
+                            text = "\n\n".join(texts)
+                        else:
+                            text = item.get("text", "")
+                        if text or attachments:
+                            messages.append({"id": turn["id"] + ":" + item["id"],
+                                "role": "user" if kind == "userMessage" else "assistant", "text": text,
+                                "attachments": attachments, "phase": item.get("phase"),
+                                "turn_id": turn["id"], "turn_status": turn.get("status")})
+                latest = turns[0] if turns else {}
+                return {"messages": messages, "next_cursor": result.get("nextCursor"),
+                        "latest_turn_id": latest.get("id"), "turn_status": latest.get("status"),
+                        "error": (latest.get("error") or {}).get("message"), "source": "app-server"}
+            except Exception:
+                self.close()
+                raise
+
+    @staticmethod
+    def validate_id(thread_id):
         if not re.fullmatch(r"[0-9a-fA-F]{8}-[0-9a-fA-F-]{27}", thread_id):
             raise RuntimeError("대화 ID가 올바르지 않아요. 목록을 새로고침해 주세요.")
+
+    def open(self, thread_id):
+        self.validate_id(thread_id)
         with self.lock:
             if thread_id not in self.listed:
                 self._start()

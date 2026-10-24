@@ -346,7 +346,7 @@ class Launcher:
         self.setup = None
         self.qr_image = None
         self.connection_url = ""
-        root.title("Pocket ChatGPT Bridge · v0.4.0")
+        root.title("Pocket ChatGPT Bridge · v0.5.0")
         root.geometry("680x800")
         root.minsize(620, 760)
         root.configure(bg="#f5f6f8")
@@ -459,7 +459,7 @@ class Launcher:
                     self.status.set("준비 완료 · 이제 아이폰 카메라로 아래 QR을 스캔하세요")
                     self.url.set(value[0])
                     self.token.set(value[1])
-                    self.connection_url = value[0] + "/?v=0.4.0#connect=" + value[1]
+                    self.connection_url = value[0] + "/?v=0.5.0#connect=" + value[1]
                     qr = qrcode.QRCode(box_size=4, border=3)
                     qr.add_data(self.connection_url)
                     qr.make(fit=True)

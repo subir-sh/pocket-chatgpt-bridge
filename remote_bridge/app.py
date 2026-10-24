@@ -48,6 +48,7 @@ class Message(BaseModel):
     text: str = Field(min_length=1, max_length=12000)
     request_id: str = Field(min_length=8, max_length=100, pattern=r"^[a-zA-Z0-9_-]+$")
     server_instance: str | None = Field(default=None, max_length=100)
+    thread_id: str | None = Field(default=None, max_length=80)
 
 
 class SessionSelection(BaseModel):
@@ -141,6 +142,10 @@ def create_app(driver=None, token: str | None = None, *, prevent_sleep: bool = F
     @app.get("/api/sessions", dependencies=[Depends(auth)])
     def sessions(cursor: str | None = None): return driver.sessions(cursor)
 
+    @app.get("/api/chats/{thread_id}/messages", dependencies=[Depends(auth)])
+    def messages(thread_id: str, cursor: str | None = None):
+        return driver.history(thread_id, cursor)
+
     @app.post("/api/sessions/select", dependencies=[Depends(auth)])
     def select(req: SessionSelection): return desktop_call("select_session", req.id)
 
@@ -154,18 +159,21 @@ def create_app(driver=None, token: str | None = None, *, prevent_sleep: bool = F
         with sent_lock:
             if req.request_id in sent:
                 result = sent[req.request_id]
-                if result["text"] != req.text:
+                if result["text"] != req.text or result.get("thread_id") != req.thread_id:
                     raise HTTPException(409,"Idempotency key reused for different message")
                 return result["response"]
             # Mark the request as uncertain BEFORE triggering the UI, so a
             # network retry cannot blindly send the same message twice.
-            sent[req.request_id]={"text":req.text,"state":"pending","response":{"input_sent":False,"note":"이미 접수한 전송입니다. 화면에서 결과를 확인하세요."}}
+            sent[req.request_id]={"text":req.text,"thread_id":req.thread_id,"state":"pending","response":{"input_sent":False,"note":"이미 접수한 전송입니다. 화면에서 결과를 확인하세요."}}
             # Never forget an ID and then accept it as a new request.
             if len(sent)>2000:
                 sent.pop(req.request_id)
                 raise HTTPException(503,"전송 기록 한도입니다. 미확인 전송을 확인한 뒤 브리지를 재시작하세요.")
         try:
-            result=desktop_call("submit",req.text)
+            if req.thread_id:
+                result=desktop_call("submit_to", req.text, req.thread_id)
+            else:
+                result=desktop_call("submit",req.text)
         except Exception:
             with sent_lock:sent[req.request_id]["state"]="uncertain"
             raise
