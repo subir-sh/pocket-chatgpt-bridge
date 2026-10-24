@@ -15,6 +15,7 @@ def test_unauthorized_access_cannot_read_or_send():
     driver=DemoBridge()
     with TestClient(create_app(driver,token=TOKEN)) as client:
         assert client.get('/api/preview').status_code==401
+        assert client.get('/api/activity').status_code==401
         chat_id=driver.sessions()['items'][0]['id']
         assert client.get(f'/api/chats/{chat_id}/messages').status_code==401
         history=client.get(f'/api/chats/{chat_id}/messages',headers=HEADERS).json()
@@ -74,3 +75,16 @@ def test_ambiguous_editor_stops_before_input():
     driver._all=lambda window:[Editor(),Editor()]
     with pytest.raises(BridgeError,match='UIA'):
         driver.submit('must not type into an unknown editor')
+
+
+def test_reply_marker_ignores_user_only_turns_and_requires_finished_output():
+    from remote_bridge.catalog import ThreadCatalog
+    finished={'id':'old','completedAt':100,'items':[{'type':'agentMessage','id':'answer','text':'답변'}]}
+    original=ThreadCatalog.reply_state([finished])
+    question={'id':'new','completedAt':None,'items':[{'type':'userMessage','id':'question','content':[]}]}
+    assert ThreadCatalog.reply_state([question,finished])==original
+    question['items'].append({'type':'agentMessage','id':'new-answer','text':'새 답변'})
+    assert ThreadCatalog.reply_state([question,finished])==original
+    question['completedAt']=200
+    result=ThreadCatalog.reply_state([question,finished])
+    assert result['reply_marker']!=original['reply_marker'] and result['reply_at']==200

@@ -105,6 +105,7 @@
       $('moreSessions').hidden=!state.nextCursor;
       $('sessionNote').textContent=(result.note||'')+' · '+state.sessions.length+'개 불러옴';
       renderSessions();
+      if(state.sessions.length)pollActivity();
       if(savedChat && !state.selected){const chat=state.sessions.find(s=>s.id===savedChat.id)||savedChat;savedChat=null;openChat(chat,false);}
       else if(!state.selected && !state.newComposer && !presentedSessions){presentedSessions=true;showTab('sessions');}
     } catch(e){$('sessionNote').textContent=e.message;}
@@ -117,7 +118,9 @@
     if(!items.length){const p=document.createElement('p');p.className='muted';p.textContent='항목을 읽지 못했습니다. 화면 탭에서 데스크톱 사이드바를 직접 조작할 수 있습니다.';list.append(p);return;}
     for(const s of items){
       const b=document.createElement('button');b.type='button';
-      b.textContent=s.title;b.className=state.selected?.id===s.id?'selected':'';
+      b.dataset.chatId=s.id;b.className=state.selected?.id===s.id?'selected':'';
+      const title=document.createElement('span');title.className='session-title';title.textContent=s.title;
+      const dot=document.createElement('span');dot.className='unread-dot';dot.hidden=!readState.unread[s.id];dot.setAttribute('role','img');dot.setAttribute('aria-label','새 답변');b.append(title,dot);
       const tag=document.createElement('small');
       tag.textContent=(s.project_name||(s.project?'프로젝트 대화':'로컬 대화'))+(s.updated_at?' · '+new Date(s.updated_at*1000).toLocaleString('ko-KR'): '');b.append(tag);
       b.addEventListener('click',async()=>{
@@ -125,6 +128,7 @@
       });
       list.append(b);
     }
+    renderUnread();
   }
   async function loadPreview(){
     if(state.refreshing || state.tab!=='preview' || document.hidden)return;
@@ -190,7 +194,7 @@
     state.selecting=true;
     try{
       if(activate)await data('sessions/select',{id:chat.id});
-      clearImages();state.selected={id:chat.id,title:chat.title};state.newComposer=false;state.messages=[];state.historyCursor=null;state.waitingUntil=0;
+      clearImages();state.selected={id:chat.id,title:chat.title};state.newComposer=false;state.messages=[];state.historyCursor=null;state.waitingUntil=0;state.reply=null;
       sessionStorage.setItem('remote-chat',JSON.stringify(state.selected));
       $('chatTitle').textContent=chat.title;$('message').placeholder='메시지 보내기';
       $('chatState').textContent='대화를 불러오는 중…';$('messageList').replaceChildren();
@@ -200,7 +204,7 @@
     finally{state.selecting=false;}
   }
   function nearBottom(){const el=$('messageScroll');return el.scrollHeight-el.scrollTop-el.clientHeight<100;}
-  function scrollLatest(){const el=$('messageScroll');el.scrollTop=el.scrollHeight;$('jumpLatest').hidden=true;}
+  function scrollLatest(){const el=$('messageScroll');el.scrollTop=el.scrollHeight;$('jumpLatest').hidden=true;markReadVisible();}
   async function copyText(text){try{await navigator.clipboard.writeText(text);toast('복사했어요.');}catch{toast('길게 눌러 텍스트를 선택해 복사해 주세요.');}}
   function messageNode(message){
     const row=document.createElement('article');row.className='message-row '+message.role;row.dataset.messageId=message.id;
@@ -270,6 +274,7 @@
       $('replyState').classList.toggle('busy',busy||waiting);
       $('replyState').textContent=result.error || (busy?'응답 중 · 저장되는 내용을 확인하고 있어요':waiting?'노트북에 전달했어요 · 새 답변을 기다리는 중':'');
       $('chatState').textContent=(busy?'응답 중 · ':'')+'대화 자동 갱신 · 2초 간격';
+      if(!older){state.reply={marker:result.reply_marker,at:result.reply_at};markReadVisible();}
       if(manual)toast(older?'이전 메시지를 불러왔어요.':'대화를 새로고침했어요.');
     }catch(e){if(state.selected===chat){$('chatState').textContent=e.message;if(manual)toast(e.message);}}
     finally{historyRequests.delete(key);}
@@ -320,7 +325,7 @@
   $('closePreview').addEventListener('click',()=>showTab('chat'));
   $('closeImage').addEventListener('click',()=>closePopover('imageViewer'));
   $('zoomImage').addEventListener('click',()=>{const zoomed=$('imageCanvas').classList.toggle('zoomed');$('zoomImage').textContent=zoomed?'화면에 맞추기':'확대';});
-  for(const [id,tab] of [['sessionsPane','sessions'],['previewPane','preview']])$(id).addEventListener('toggle',e=>{if(e.newState==='closed' && state.tab===tab)state.tab='chat';});
+  for(const [id,tab] of [['sessionsPane','sessions'],['previewPane','preview']])$(id).addEventListener('toggle',e=>{if(e.newState==='closed' && state.tab===tab){state.tab='chat';markReadVisible();}});
 
   $('pairButton').addEventListener('click',pair);
   async function brightness(dimmed){
@@ -342,7 +347,10 @@
     if(state.pending){toast('먼저 이전 전송 결과를 확인하거나 화면 확인 후 새로 작성을 누르세요.');return;}
     if(!confirm('이 폰에 저장된 연결을 해제할까요? 다시 연결하려면 노트북의 QR 코드를 스캔하면 됩니다.'))return;
     clearImages();forgetToken();state.token='';$('pairToken').value='';
-    showPaired(false);
+
+
+
+  showPaired(false);
   });
   $('checkPending').addEventListener('click',checkPending);
   $('clearPending').addEventListener('click',()=>{if(confirm('노트북 화면에서 이전 메시지의 전송 여부를 확인했나요? 새 전송은 중복될 수 있습니다.'))savePending(null);});
@@ -350,7 +358,7 @@
   $('refreshChat').addEventListener('click',()=>{closePanels();loadMessages(false,true);});
   $('olderMessages').addEventListener('click',()=>loadMessages(true,true));
   $('jumpLatest').addEventListener('click',scrollLatest);
-  $('messageScroll').addEventListener('scroll',()=>{if(nearBottom())$('jumpLatest').hidden=true;});
+  $('messageScroll').addEventListener('scroll',()=>{if(nearBottom()){$('jumpLatest').hidden=true;markReadVisible();}});
   $('showSessions').addEventListener('click',()=>{showTab('sessions');listSessions();});
   $('showPreview').addEventListener('click',()=>showTab('preview'));
   $('refreshSessions').addEventListener('click',()=>listSessions());
@@ -383,6 +391,57 @@
   setInterval(()=>{
     if(state.token && !document.hidden){status();if(state.tab==='preview' && $('autoPreview').checked)loadPreview();if(state.tab==='chat' && state.selected)loadMessages();}
   },2000);
+  function tokenScope(token){let hash=2166136261;for(const c of token)hash=Math.imul(hash^c.charCodeAt(0),16777619);return (hash>>>0).toString(16);}
+  function loadReadState(){
+    try{const value=JSON.parse(localStorage.getItem('remote-unread-v1')||sessionStorage.getItem('remote-unread-v1')||'null');if(value?.scope===tokenScope(state.token))return value;}catch{}
+    return {scope:tokenScope(state.token),started:0,since:0,seen:{},unread:{}};
+  }
+  let readState=loadReadState(),readRevision=0;const readVersions={};
+  function saveReadState(){const value=JSON.stringify(readState);try{localStorage.setItem('remote-unread-v1',value);}catch{}try{sessionStorage.setItem('remote-unread-v1',value);}catch{}}
+  function ensureReadScope(){if(readState.scope!==tokenScope(state.token)){readState=loadReadState();renderUnread();}}
+  function renderUnread(){
+    const count=Object.keys(readState.unread).length;
+    $('unreadIndicator').hidden=!count;
+    $('showSessions').setAttribute?.('aria-label',count?'대화 목록 열기 · 새 답변 '+count+'개':'대화 목록 열기');
+    for(const button of $('sessionList').querySelectorAll?.('[data-chat-id]')||[]){const unread=!!readState.unread[button.dataset.chatId];button.classList.toggle('unread',unread);const dot=button.querySelector('.unread-dot');if(dot)dot.hidden=!unread;}
+  }
+  function chatVisible(){return !document.hidden && state.tab==='chat' && !panels.some(id=>$(id).matches?.(':popover-open')||$(id).classList.contains?.('fallback-open'));}
+  function markReadVisible(){
+    if(!state.selected || !state.reply?.marker || !chatVisible() || !nearBottom())return;
+    ensureReadScope();const id=state.selected.id,reply=state.reply,previous=readState.seen[id],unread=readState.unread[id];
+    if(unread && unread.marker!==reply.marker && unread.at>=reply.at)return;
+    if(previous?.marker===reply.marker && !unread)return;
+    readState.seen[id]={marker:reply.marker,at:reply.at};delete readState.unread[id];readVersions[id]=++readRevision;
+    saveReadState();renderUnread();
+  }
+  let activityRequest=null;
+  function pollActivity(){
+    if(!state.token || document.hidden)return Promise.resolve();
+    if(activityRequest)return activityRequest;
+    activityRequest=refreshActivity().finally(()=>{activityRequest=null;});return activityRequest;
+  }
+  async function refreshActivity(){
+    ensureReadScope();const token=state.token,scope=readState.scope,revision=readRevision;
+    try{
+      const result=await data('activity'+(readState.since?'?since='+encodeURIComponent(readState.since):''));
+      if(token!==state.token || scope!==readState.scope || typeof result.now!=='number' || !Array.isArray(result.items))return;
+      const first=!readState.started;
+      if(first)readState.started=Math.floor(result.now);
+      for(const item of result.items){
+        if(!item.reply_marker || !item.reply_at || (readVersions[item.id]||0)>revision)continue;
+        const seen=readState.seen[item.id];
+        if(seen?.marker===item.reply_marker || (seen?.at||0)>item.reply_at)continue;
+        if(first && item.reply_at<=result.now){readState.seen[item.id]={marker:item.reply_marker,at:item.reply_at};continue;}
+        if(item.reply_at<readState.started)continue;
+        readState.unread[item.id]={marker:item.reply_marker,at:item.reply_at};
+      }
+      readState.since=result.now;saveReadState();renderUnread();markReadVisible();
+    }catch{/* Keep the last checkpoint and catch up after reconnect. */}
+  }
+  document.addEventListener?.('visibilitychange',()=>{if(!document.hidden && state.token){status();pollActivity();if(state.selected)loadMessages();}});
+  for(const id of ['menuPopover','displaySettings','imageViewer'])$(id).addEventListener('toggle',e=>{if(e.newState==='closed')markReadVisible();});
+  setInterval(()=>pollActivity(),5000);
+  renderUnread();
   showPaired(false);
   if(state.token){showPaired(true);if(state.pending)$('message').value=state.pending.text;status();}
   if(state.pending)savePending(state.pending);

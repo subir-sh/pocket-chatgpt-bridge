@@ -231,6 +231,12 @@ class WindowsBridge:
     def image(self, thread_id, asset_id):
         return self.catalog.media.read(thread_id, asset_id)
 
+    def activity(self, since=None):
+        try:
+            return self.catalog.activity(since)
+        except Exception as exc:
+            raise BridgeError(str(exc)) from exc
+
     def close(self):
         self.catalog.close()
         self._ui_worker.shutdown(wait=False, cancel_futures=True)
@@ -444,6 +450,7 @@ class DemoBridge:
     def __init__(self):
         self.lock=threading.RLock()
         self.messages=[]
+        self.reply_events=[]
         from .media import MediaStore
         self.media=MediaStore()
         self.current="Example local conversation"
@@ -463,7 +470,10 @@ class DemoBridge:
             raise BridgeError("Not found")
         messages = [{"id": "demo-user", "role": "user", "text": "폰에서도 이전 대화를 편하게 읽을 수 있어?"},
                     {"id": "demo-answer", "role": "assistant", "text": "네. **대화 내용을 글자로** 읽을 수 있어요.\n\n- 이전 메시지 확인\n- 긴 답변과 코드 읽기\n- 같은 대화에 이어서 질문하기\n\n```python\nprint('Hello from Pocket')\n```\n\n| 기능 | 상태 |\n| --- | --- |\n| 대화 내역 | 표시됨 |\n| 자동 갱신 | 2초 간격 |"}]
-        for i, text in enumerate(self.messages):
+        for i, event in enumerate(self.reply_events):
+            if event["id"] != thread_id:
+                continue
+            text=event["text"]
             messages.extend([{"id": f"demo-u-{i}", "role": "user", "text": text},
                              {"id": f"demo-a-{i}", "role": "assistant", "text": "테스트 답변입니다. 실제 ChatGPT에는 전송하지 않았어요."}])
         import base64
@@ -474,7 +484,12 @@ class DemoBridge:
         out=io.BytesIO();sample.save(out,"PNG")
         image=self.media.add(thread_id,"data:image/png;base64,"+base64.b64encode(out.getvalue()).decode(),alt="이미지 표시 예시")
         messages[1]["images"]=[image]
-        return {"messages": messages, "next_cursor": None, "turn_status": "completed", "source": "demo"}
+        latest=next((event for event in reversed(self.reply_events) if event["id"]==thread_id),None)
+        return {"messages": messages, "next_cursor": None, "turn_status": "completed", "source": "demo",
+                "reply_marker": latest["reply_marker"] if latest else "demo-initial", "reply_at": latest["reply_at"] if latest else 0}
+    def activity(self, since=None):
+        latest={event["id"]:event for event in self.reply_events if since is not None and event["reply_at"]>=since-2}
+        return {"now": time.time(), "items": [{key:event[key] for key in ("id","reply_marker","reply_at")} for event in latest.values()]}
     def image(self, thread_id, asset_id):
         return self.media.read(thread_id, asset_id)
     def submit_to(self, message, thread_id):
@@ -488,6 +503,8 @@ class DemoBridge:
     def submit(self,message):
         if not message.strip():raise BridgeError("Empty message")
         self.messages.append(message)
+        self.reply_events.append({"id":_id(self.current,(0,0,0,0)),"text":message,
+                                  "reply_marker":str(time.time_ns()),"reply_at":time.time()})
         return {"input_sent":True,"note":"Demo only"}
     def click(self,x,y):return {"clicked":True}
     def scroll(self,amount,sidebar=False):return {"scrolled":amount}

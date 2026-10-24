@@ -1,5 +1,6 @@
 """Read local chat metadata through the documented app-server thread/list API."""
 import json
+import hashlib
 import os
 from pathlib import Path
 import queue
@@ -78,7 +79,7 @@ class ThreadCatalog:
                 except json.JSONDecodeError:
                     pass
         threading.Thread(target=read, name="chat-catalog", daemon=True).start()
-        self._request("initialize", {"clientInfo": {"name": "pocket_chatgpt_bridge", "version": "0.6.0"}})
+        self._request("initialize", {"clientInfo": {"name": "pocket_chatgpt_bridge", "version": "0.7.0"}})
         self.process.stdin.write('{"method":"initialized"}\n')
         self.process.stdin.flush()
 
@@ -114,6 +115,51 @@ class ThreadCatalog:
             except Exception:
                 self.close()
                 raise
+
+    @staticmethod
+    def reply_state(turns):
+        """Identify the latest finished visible assistant output, not thread edits."""
+        for turn in turns:
+            if not turn.get("completedAt"):
+                continue
+            outputs = []
+            for item in turn.get("items", []):
+                if item.get("type") == "agentMessage" and item.get("text"):
+                    outputs.append([item["id"], "text"])
+                elif item.get("type") == "imageGeneration" and item.get("status") == "completed":
+                    outputs.append([item["id"], "image"])
+            if outputs:
+                marker = hashlib.sha256(json.dumps([turn["id"], turn["completedAt"], outputs], ensure_ascii=False).encode()).hexdigest()[:32]
+                return {"reply_marker": marker, "reply_at": turn["completedAt"]}
+        return {"reply_marker": None, "reply_at": None}
+
+    def activity(self, since=None):
+        # Use the request start as the watermark, so arrivals during this scan
+        # remain in the next overlapping scan. No model call or thread resume.
+        now = time.time()
+        threshold = max(0, int(now if since is None else since) - 2)
+        changed = []
+        cursor = None
+        while True:
+            page = self.list(cursor)
+            changed.extend(item for item in page["items"] if (item.get("updated_at") or 0) >= threshold)
+            cursor = page.get("next_cursor")
+            if not cursor or not page["items"] or (page["items"][-1].get("updated_at") or 0) < threshold:
+                break
+        items = []
+        with self.lock:
+            try:
+                self._start()
+                for thread in changed:
+                    result = self._request("thread/turns/list", {"threadId": thread["id"],
+                        "limit": 2, "sortDirection": "desc", "itemsView": "summary"})
+                    reply = self.reply_state(result.get("data", []))
+                    if reply["reply_marker"]:
+                        items.append({"id": thread["id"], **reply})
+            except Exception:
+                self.close()
+                raise
+        return {"now": now, "items": items}
 
     def history(self, thread_id, cursor=None):
         """Read conversation history without resuming or generating a turn."""
@@ -173,6 +219,7 @@ class ThreadCatalog:
                                 "turn_id": turn["id"], "turn_status": turn.get("status")})
                 latest = turns[0] if turns else {}
                 return {"messages": messages, "next_cursor": result.get("nextCursor"),
+                        **self.reply_state(turns),
                         "latest_turn_id": latest.get("id"), "turn_status": latest.get("status"),
                         "error": (latest.get("error") or {}).get("message"), "source": "app-server"}
             except Exception:

@@ -1,5 +1,14 @@
 # Verification
 
+## Unread reply dots — 2026-10-24 (v0.7.0)
+
+- Added a small blue dot beside unread conversations and on the chat-list button, without increasing the 48px header. Read receipts are local to the phone/browser and scoped to its pairing credential. Existing history is the first-connection baseline.
+- Real WebKit at 390×844 against the actual demo HTTP server: a reply in another chat produced a dot, reload retained it, and opening the latest reply cleared it. Replies in the visible chat stayed read. A simulated visibility change caught up after return; reading earlier messages kept a new reply unread until jumping to the latest content. This does not establish physical iOS suspension/push behavior.
+- The read-only native activity query returned completed-reply markers from actual stored conversations. Full-history and summary-history markers matched. An activity scan plus the comparison took about 1.297 seconds. No real prompt was sent for this revision.
+- Kept four Node checks and added one focused Python check, for five Python checks: a user-only turn or unfinished output does not change the completed-reply marker; a new completed answer does. Extended existing authorization coverage to the activity endpoint.
+- Built and restarted the actual Desktop v0.7.0 EXE. Unauthenticated activity returned 401, the new unread UI assets were included, and authenticated completed-reply activity worked locally and through the actual Tailscale HTTPS address from this laptop.
+- Activity uses changed-thread metadata plus summary reads, polled every 5 seconds while visible. Interrupted transport retains the checkpoint so the next successful scan can catch up. Reading markers never resume a thread or start a model turn.
+
 ## Compact chat and images — 2026-10-24 (v0.6.0)
 
 - Replaced the three stacked header rows with one 48px title/menu row. At 390×844 in real WebKit with iPhone 13 settings, the message viewport measured 728px. The footer caption is removed. Chat list, connection details, display settings, and notebook controls open as dismissible popovers over the chat.

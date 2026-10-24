@@ -142,6 +142,9 @@ def create_app(driver=None, token: str | None = None, *, prevent_sleep: bool = F
     @app.get("/api/sessions", dependencies=[Depends(auth)])
     def sessions(cursor: str | None = None): return driver.sessions(cursor)
 
+    @app.get("/api/activity", dependencies=[Depends(auth)])
+    def activity(since: float | None = None): return driver.activity(since)
+
     @app.get("/api/chats/{thread_id}/messages", dependencies=[Depends(auth)])
     def messages(thread_id: str, cursor: str | None = None):
         return driver.history(thread_id, cursor)
