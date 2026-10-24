@@ -118,7 +118,7 @@ def create_app(driver=None, token: str | None = None, *, prevent_sleep: bool = F
         resp.headers["X-Content-Type-Options"]="nosniff"
         resp.headers["Referrer-Policy"]="no-referrer"
         resp.headers["X-Frame-Options"]="DENY"
-        resp.headers["Content-Security-Policy"]="default-src 'self'; connect-src 'self'; img-src 'self' blob: data:; script-src 'self'; style-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'"
+        resp.headers["Content-Security-Policy"]="default-src 'self'; connect-src 'self'; img-src 'self' blob: data: https:; script-src 'self'; style-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'"
         return resp
 
     @app.exception_handler(BridgeError)
@@ -145,6 +145,13 @@ def create_app(driver=None, token: str | None = None, *, prevent_sleep: bool = F
     @app.get("/api/chats/{thread_id}/messages", dependencies=[Depends(auth)])
     def messages(thread_id: str, cursor: str | None = None):
         return driver.history(thread_id, cursor)
+
+    @app.get("/api/chats/{thread_id}/images/{asset_id}", dependencies=[Depends(auth)])
+    def image(thread_id: str, asset_id: str):
+        try:
+            return Response(driver.image(thread_id, asset_id), media_type="image/webp")
+        except Exception as exc:
+            raise HTTPException(404, "이미지 원본을 읽지 못했어요. 파일이 이동되거나 삭제됐을 수 있어요.") from exc
 
     @app.post("/api/sessions/select", dependencies=[Depends(auth)])
     def select(req: SessionSelection): return desktop_call("select_session", req.id)

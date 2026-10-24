@@ -228,6 +228,9 @@ class WindowsBridge:
         except Exception as exc:
             raise BridgeError(str(exc)) from exc
 
+    def image(self, thread_id, asset_id):
+        return self.catalog.media.read(thread_id, asset_id)
+
     def close(self):
         self.catalog.close()
         self._ui_worker.shutdown(wait=False, cancel_futures=True)
@@ -441,6 +444,8 @@ class DemoBridge:
     def __init__(self):
         self.lock=threading.RLock()
         self.messages=[]
+        from .media import MediaStore
+        self.media=MediaStore()
         self.current="Example local conversation"
         self.items=["Example local conversation","Another example"]
     def activate(self):return {"active":True}
@@ -461,7 +466,17 @@ class DemoBridge:
         for i, text in enumerate(self.messages):
             messages.extend([{"id": f"demo-u-{i}", "role": "user", "text": text},
                              {"id": f"demo-a-{i}", "role": "assistant", "text": "테스트 답변입니다. 실제 ChatGPT에는 전송하지 않았어요."}])
+        import base64
+        from PIL import ImageDraw
+        sample=Image.new("RGB",(800,440),"#c8e1d3");draw=ImageDraw.Draw(sample)
+        draw.rounded_rectangle((65,55,735,385),28,fill="#1e3028")
+        draw.line([(125,315),(265,255),(400,280),(530,165),(675,115)],fill="#bce4ce",width=8)
+        out=io.BytesIO();sample.save(out,"PNG")
+        image=self.media.add(thread_id,"data:image/png;base64,"+base64.b64encode(out.getvalue()).decode(),alt="이미지 표시 예시")
+        messages[1]["images"]=[image]
         return {"messages": messages, "next_cursor": None, "turn_status": "completed", "source": "demo"}
+    def image(self, thread_id, asset_id):
+        return self.media.read(thread_id, asset_id)
     def submit_to(self, message, thread_id):
         self.select_session(thread_id)
         return self.submit(message)

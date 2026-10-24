@@ -19,6 +19,11 @@ def test_unauthorized_access_cannot_read_or_send():
         assert client.get(f'/api/chats/{chat_id}/messages').status_code==401
         history=client.get(f'/api/chats/{chat_id}/messages',headers=HEADERS).json()
         assert [m['role'] for m in history['messages']]==['user','assistant']
+        image_url=history['messages'][1]['images'][0]['url']
+        assert client.get(image_url).status_code==401
+        image=client.get(image_url,headers=HEADERS)
+        assert image.headers['content-type']=='image/webp' and image.content[8:12]==b'WEBP'
+        assert client.get(image_url[:-1]+'x',headers=HEADERS).status_code==404
         assert client.post('/api/display-output',json={'enabled':False}).status_code==401
         assert client.post('/api/send',headers={'X-Remote-Token':'wrong'},json={
             'text':'blocked','request_id':'unauthorized_01'}).status_code==401

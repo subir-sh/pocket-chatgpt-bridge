@@ -27,7 +27,7 @@
   let pending=null;
   try{pending=JSON.parse(sessionStorage.getItem('remote-pending')||'null');}catch{sessionStorage.removeItem('remote-pending');}
   let savedChat=null;try{savedChat=JSON.parse(sessionStorage.getItem('remote-chat')||'null');}catch{}
-  const state = {selected:null, messages:[], historyCursor:null, selecting:false, waitingUntil:0, token:initialToken, tab:'sessions', sessions:[], nextCursor:null, previewUrl:null, refreshing:false, zoom:1, online:false, serverInstance:null, pending};
+  const state = {selected:null, messages:[], historyCursor:null, selecting:false, waitingUntil:0, token:initialToken, tab:'chat', sessions:[], nextCursor:null, previewUrl:null, refreshing:false, zoom:1, online:false, serverInstance:null, pending};
   const toast = (message) => {
     $('toast').textContent = message;
     $('toast').classList.add('show');
@@ -52,7 +52,7 @@
     return response;
   }
   const data = async (path,payload) => (await api(path,payload)).json();
-  function showPaired(yes){$('pairing').hidden=yes;$('workspace').hidden=!yes;$('composer').hidden=!yes;$('pendingPanel').hidden=!yes||!state.pending;}
+  function showPaired(yes){$('pairing').hidden=yes;$('workspace').hidden=!yes;$('composer').hidden=!yes;$('pendingPanel').hidden=!yes||!state.pending;$('showSessions').disabled=$('openMenu').disabled=!yes;if(!yes)closePanels();}
   function savePending(value){
     state.pending=value;
     if(value)sessionStorage.setItem('remote-pending',JSON.stringify(value));
@@ -92,7 +92,7 @@
       await Promise.all([status(),listSessions()]);
     } catch(e){$('pairError').textContent=e.message;showPaired(false);}
   }
-  let readingSessions=false;
+  let readingSessions=false,presentedSessions=false;
   async function listSessions(more=false){
     if(readingSessions)return;
     readingSessions=true;
@@ -105,7 +105,8 @@
       $('moreSessions').hidden=!state.nextCursor;
       $('sessionNote').textContent=(result.note||'')+' · '+state.sessions.length+'개 불러옴';
       renderSessions();
-      if(savedChat && !state.selected && state.tab==='sessions'){const chat=state.sessions.find(s=>s.id===savedChat.id)||savedChat;savedChat=null;openChat(chat,false);}
+      if(savedChat && !state.selected){const chat=state.sessions.find(s=>s.id===savedChat.id)||savedChat;savedChat=null;openChat(chat,false);}
+      else if(!state.selected && !state.newComposer && !presentedSessions){presentedSessions=true;showTab('sessions');}
     } catch(e){$('sessionNote').textContent=e.message;}
     finally{readingSessions=false;}
   }
@@ -138,16 +139,15 @@
     }catch(e){$('previewPlaceholder').hidden=false;$('previewPlaceholder').textContent=e.message;}
     finally{state.refreshing=false;}
   }
+  const panels=['sessionsPane','previewPane','menuPopover','displaySettings','imageViewer'];
+  function closePopover(id){const el=$(id);if(el.hidePopover)el.hidePopover();else{el.hidden=true;el.classList.remove('fallback-open');}}
+  function closePanels(except){for(const id of panels)if(id!==except)closePopover(id);}
+  function openPopover(id){closePanels(id);const el=$(id);if(el.showPopover)el.showPopover();else{el.hidden=false;el.classList.add('fallback-open');}}
   function showTab(tab){
     state.tab=tab;
-    $('showSessions').classList.toggle('active',tab==='sessions');
-    $('showPreview').classList.toggle('active',tab==='preview');
-    $('showChat').classList.toggle('active',tab==='chat');
-    $('chatPane').hidden=(tab!=='chat');
-    $('sessionsPane').hidden=(tab!=='sessions');
-    $('previewPane').hidden=(tab!=='preview');
-    if(tab==='preview')loadPreview();
-    if(tab==='chat' && state.selected)loadMessages();
+    if(tab==='sessions')openPopover('sessionsPane');
+    else if(tab==='preview'){openPopover('previewPane');loadPreview();}
+    else{closePanels();if(state.selected)loadMessages();}
   }
   async function send(ev){
     ev.preventDefault();
@@ -190,7 +190,7 @@
     state.selecting=true;
     try{
       if(activate)await data('sessions/select',{id:chat.id});
-      state.selected={id:chat.id,title:chat.title};state.newComposer=false;state.messages=[];state.historyCursor=null;state.waitingUntil=0;
+      clearImages();state.selected={id:chat.id,title:chat.title};state.newComposer=false;state.messages=[];state.historyCursor=null;state.waitingUntil=0;
       sessionStorage.setItem('remote-chat',JSON.stringify(state.selected));
       $('chatTitle').textContent=chat.title;$('message').placeholder='메시지 보내기';
       $('chatState').textContent='대화를 불러오는 중…';$('messageList').replaceChildren();
@@ -207,18 +207,20 @@
     const author=document.createElement('div');author.className='message-author';author.textContent=message.role==='user'?'나':'ChatGPT';
     const body=document.createElement('div');body.className='message-body';
     if(message.role==='assistant' && globalThis.marked && globalThis.DOMPurify){
-      // Local Markdown renderer + allowlisted sanitizer. Never load remote message images.
+      // Only images registered from conversation content survive the sanitizer below.
       body.innerHTML=DOMPurify.sanitize(marked.parse(message.text||'',{gfm:true,breaks:true}),{
-        ALLOWED_TAGS:['p','br','strong','em','del','s','a','code','pre','blockquote','ul','ol','li','h1','h2','h3','h4','h5','h6','hr','table','thead','tbody','tr','th','td','sup','sub'],
-        ALLOWED_ATTR:['href','title','start','colspan','rowspan'],ALLOW_DATA_ATTR:false
+        ALLOWED_TAGS:['p','br','strong','em','del','s','a','code','pre','blockquote','ul','ol','li','h1','h2','h3','h4','h5','h6','hr','table','thead','tbody','tr','th','td','sup','sub','img'],
+        ALLOWED_ATTR:['href','title','start','colspan','rowspan','src','alt'],ALLOW_DATA_ATTR:false
       });
       body.querySelectorAll('a').forEach(a=>{const href=a.getAttribute('href')||'';if(!/^https?:\/\//i.test(href)&&!/^mailto:/i.test(href)){a.removeAttribute('href');a.title='노트북에서 열 수 있는 파일 또는 링크';}else{a.target='_blank';a.rel='noopener noreferrer';}});
+      body.querySelectorAll('img').forEach(img=>{const asset=(message.images||[]).find(a=>a.inline && a.url===img.getAttribute('src'));if(asset)img.replaceWith(imageNode(asset));else img.remove();});
       body.querySelectorAll('pre').forEach(pre=>{const text=pre.textContent;const button=document.createElement('button');button.type='button';button.className='copy-code';button.textContent='코드 복사';button.addEventListener('click',()=>copyText(text));pre.prepend(button);});
       body.querySelectorAll('table').forEach(table=>{const wrap=document.createElement('div');wrap.className='table-wrap';table.replaceWith(wrap);wrap.append(table);});
     }else body.textContent=message.text||'';
     row.append(author,body);
+    for(const asset of message.images||[]){if(!asset.inline)row.append(imageNode(asset));}
     for(const name of message.attachments||[]){const el=document.createElement('div');el.className='attachment';el.textContent='▧ '+name+' · 원본은 노트북에서 확인';row.append(el);}
-    if(message.role==='assistant'){
+    if(message.role==='assistant' && message.text){
       const actions=document.createElement('div');actions.className='message-actions';
       const copy=document.createElement('button');copy.type='button';copy.textContent='답변 복사';copy.addEventListener('click',()=>copyText(message.text));actions.append(copy);row.append(actions);
     }
@@ -253,11 +255,12 @@
       state.messages=[...new Map(combined.map(m=>[m.id,m])).values()];
       if(first||older)state.historyCursor=result.next_cursor||null;
       $('olderMessages').hidden=!state.historyCursor;
+      const follow=stick && (first||Math.abs(el.scrollTop-previousTop)<3);
       const changed=previous!==JSON.stringify(state.messages);
       if(changed)renderMessages();
       $('chatEmpty').hidden=state.messages.length>0;
       if(older)el.scrollTop=previousTop+(el.scrollHeight-previousHeight);
-      else if(stick && changed)scrollLatest();
+      else if(follow && changed)scrollLatest();
       else if(changed)$('jumpLatest').hidden=false;
       const latest=state.messages[state.messages.length-1];
       if(latest?.role==='assistant' && latest.turn_status==='completed' && changed)state.waitingUntil=0;
@@ -273,6 +276,51 @@
   }
   $('message').addEventListener('input',()=>{const el=$('message');el.style.height='auto';el.style.height=Math.min(el.scrollHeight,150)+'px';});
   if(globalThis.visualViewport){const resize=()=>{document.documentElement.style.setProperty('--app-height',visualViewport.height+'px');};visualViewport.addEventListener('resize',resize);resize();}
+
+
+  const imageUrls=new Map();let imageEpoch=0;
+  function clearImages(){imageEpoch++;closePopover('imageViewer');imageUrls.forEach(p=>p.then(url=>{if(url.startsWith('blob:'))URL.revokeObjectURL(url);}).catch(()=>{}));imageUrls.clear();$('fullImage').removeAttribute?.('src');}
+  function assetUrl(asset){
+    if(asset.remote && /^https:\/\//i.test(asset.url))return Promise.resolve(asset.url);
+    if(!asset.url.startsWith('/api/chats/'))return Promise.reject(Error('Unknown image'));
+    if(!imageUrls.has(asset.url)){
+      const epoch=imageEpoch;
+      const promise=api(asset.url.slice(5)).then(r=>r.blob()).then(blob=>{
+        const url=URL.createObjectURL(blob);if(epoch!==imageEpoch){URL.revokeObjectURL(url);throw Error('Chat changed');}return url;
+      }).catch(e=>{imageUrls.delete(asset.url);throw e;});
+      imageUrls.set(asset.url,promise);
+    }
+    return imageUrls.get(asset.url);
+  }
+  function viewImage(url,alt){$('fullImage').src=url;$('fullImage').alt=alt||'이미지';$('imageCanvas').classList.remove('zoomed');$('zoomImage').textContent='확대';openPopover('imageViewer');}
+  const imageObserver=globalThis.IntersectionObserver?new IntersectionObserver(entries=>{for(const entry of entries)if(entry.isIntersecting){imageObserver.unobserve(entry.target);entry.target.loadImage();}},{root:$('messageScroll'),rootMargin:'400px'}):null;
+  function imageNode(asset){
+    const button=document.createElement('button');button.type='button';button.className='chat-image';button.setAttribute('aria-label',(asset.alt||'이미지')+' 확대 보기');
+    const img=document.createElement('img');img.alt=asset.alt||'이미지';img.referrerPolicy='no-referrer';
+    const label=document.createElement('span');label.className='image-label';label.textContent='이미지 불러오는 중…';button.append(img,label);
+    let url=null,loading=false;
+    button.loadImage=async()=>{
+      if(loading||url)return;loading=true;label.textContent='이미지 불러오는 중…';
+      try{
+        const resolved=await assetUrl(asset),el=$('messageScroll'),top=el.scrollTop,follow=nearBottom();
+        img.onload=()=>{url=resolved;label.textContent='탭해서 확대';if(follow && Math.abs(el.scrollTop-top)<3)scrollLatest();};
+        img.onerror=()=>{url=null;loading=false;label.textContent='이미지를 읽지 못했어요 · 탭하여 다시 시도';};
+        img.src=resolved;
+      }catch{label.textContent='이미지를 읽지 못했어요 · 탭하여 다시 시도';}
+      finally{loading=false;}
+    };
+    button.addEventListener('click',()=>{if(url)viewImage(url,asset.alt);else button.loadImage();});
+    if(imageObserver)imageObserver.observe(button);else button.loadImage();
+    return button;
+  }
+  $('openMenu').addEventListener('click',()=>openPopover('menuPopover'));
+  $('chooseChat').addEventListener('click',()=>showTab('sessions'));
+  $('openDisplaySettings').addEventListener('click',()=>openPopover('displaySettings'));
+  $('closeDisplaySettings').addEventListener('click',()=>showTab('chat'));
+  $('closePreview').addEventListener('click',()=>showTab('chat'));
+  $('closeImage').addEventListener('click',()=>closePopover('imageViewer'));
+  $('zoomImage').addEventListener('click',()=>{const zoomed=$('imageCanvas').classList.toggle('zoomed');$('zoomImage').textContent=zoomed?'화면에 맞추기':'확대';});
+  for(const [id,tab] of [['sessionsPane','sessions'],['previewPane','preview']])$(id).addEventListener('toggle',e=>{if(e.newState==='closed' && state.tab===tab)state.tab='chat';});
 
   $('pairButton').addEventListener('click',pair);
   async function brightness(dimmed){
@@ -293,17 +341,17 @@
   $('settingsButton').addEventListener('click',()=>{
     if(state.pending){toast('먼저 이전 전송 결과를 확인하거나 화면 확인 후 새로 작성을 누르세요.');return;}
     if(!confirm('이 폰에 저장된 연결을 해제할까요? 다시 연결하려면 노트북의 QR 코드를 스캔하면 됩니다.'))return;
-    forgetToken();state.token='';$('pairToken').value='';
+    clearImages();forgetToken();state.token='';$('pairToken').value='';
     showPaired(false);
   });
   $('checkPending').addEventListener('click',checkPending);
   $('clearPending').addEventListener('click',()=>{if(confirm('노트북 화면에서 이전 메시지의 전송 여부를 확인했나요? 새 전송은 중복될 수 있습니다.'))savePending(null);});
   $('showChat').addEventListener('click',()=>showTab('chat'));
-  $('refreshChat').addEventListener('click',()=>loadMessages(false,true));
+  $('refreshChat').addEventListener('click',()=>{closePanels();loadMessages(false,true);});
   $('olderMessages').addEventListener('click',()=>loadMessages(true,true));
   $('jumpLatest').addEventListener('click',scrollLatest);
   $('messageScroll').addEventListener('scroll',()=>{if(nearBottom())$('jumpLatest').hidden=true;});
-  $('showSessions').addEventListener('click',()=>showTab('sessions'));
+  $('showSessions').addEventListener('click',()=>{showTab('sessions');listSessions();});
   $('showPreview').addEventListener('click',()=>showTab('preview'));
   $('refreshSessions').addEventListener('click',()=>listSessions());
   $('moreSessions').addEventListener('click',()=>listSessions(true));
@@ -316,7 +364,7 @@
   $('zoomOut').addEventListener('click',()=>{state.zoom=Math.max(1,Math.round((state.zoom-.5)*10)/10);$('previewImage').style.width=(state.zoom*100)+'%';});
   $('newSession').addEventListener('click',async()=>{
     if(!confirm('데스크톱 화면에서 현재 Work Local 모드인지 확인했나요?\nCloud 모드에서 생성한 대화는 동기화될 수 있습니다.'))return;
-    try{const r=await data('sessions/new',{confirmed_local:true});state.selected=null;state.newComposer=true;state.messages=[];sessionStorage.removeItem('remote-chat');$('messageList').replaceChildren();$('chatTitle').textContent='새 대화';$('chatState').textContent='첫 메시지를 보낸 뒤 대화 목록에서 선택해 주세요.';$('chatEmpty').hidden=false;$('olderMessages').hidden=true;$('replyState').hidden=true;toast(r.note||'새 대화를 열었어요.');showTab('chat');await listSessions();}
+    try{const r=await data('sessions/new',{confirmed_local:true});clearImages();state.selected=null;state.newComposer=true;state.messages=[];sessionStorage.removeItem('remote-chat');$('messageList').replaceChildren();$('chatTitle').textContent='새 대화';$('chatState').textContent='첫 메시지를 보낸 뒤 대화 목록에서 선택해 주세요.';$('chatEmpty').hidden=false;$('olderMessages').hidden=true;$('replyState').hidden=true;toast(r.note||'새 대화를 열었어요.');showTab('chat');await listSessions();}
     catch(e){toast(e.message+' 화면 탭에서 직접 조작해도 됩니다.');}
   });
   $('previewImage').addEventListener('click',async(e)=>{

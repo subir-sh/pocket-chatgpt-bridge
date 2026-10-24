@@ -1,5 +1,14 @@
 # Verification
 
+## Compact chat and images — 2026-10-24 (v0.6.0)
+
+- Replaced the three stacked header rows with one 48px title/menu row. At 390×844 in real WebKit with iPhone 13 settings, the message viewport measured 728px. The footer caption is removed. Chat list, connection details, display settings, and notebook controls open as dismissible popovers over the chat.
+- The actual demo HTTP image endpoint required authentication and returned a decodable WebP. WebKit displayed it, opened the full-screen image viewer, toggled zoom, and returned to the conversation. Inline Markdown images also worked; unregistered raw HTML images and scripts were removed. Sending, reload, remembered selection, and a shortened keyboard-sized viewport still worked.
+- Read an existing real uploaded image (645×451) and an existing real generated image (1536×1024) through the new conversation-image path and decoded the returned WebP pixels. No new model message or image generation was requested for this revision. Private images and their paths are not published.
+- Retained four Python and four Node checks. Extended the existing access-control check to verify image 401, authenticated pixels, and rejection of an unknown image ID. This is not a physical iPhone or cellular test.
+- The final v0.6.0 EXE passed real image-pixel, chat-text, preview, and GUI checks. Replaced and restarted the Desktop executable. The running service returned authenticated conversation text and actual WebP image pixels through the real Tailscale HTTPS address from this laptop.
+- Raster images are re-encoded up to 4096px; image originals are not exposed through arbitrary file paths. External HTTPS image URLs load without the bridge credential. Deleted originals, external authentication, animated playback, and app-specific interactive widgets remain limitations.
+
 ## Mobile conversation UI — 2026-10-24 (v0.5.0)
 
 - The official read-only `thread/turns/list` endpoint returned the existing dedicated test chat's user and assistant messages. The bridge returns these visible message types only, not reasoning or raw tool output. It does not resume a thread or call a model API to read history.

@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import threading
 import time
+from .media import MediaStore
 
 
 class ThreadCatalog:
@@ -17,6 +18,8 @@ class ThreadCatalog:
         self.lines = None
         self.counter = 0
         self.listed = {}
+        self.media = MediaStore()
+        self.cwd = {}
 
     @staticmethod
     def binary():
@@ -75,7 +78,7 @@ class ThreadCatalog:
                 except json.JSONDecodeError:
                     pass
         threading.Thread(target=read, name="chat-catalog", daemon=True).start()
-        self._request("initialize", {"clientInfo": {"name": "pocket_chatgpt_bridge", "version": "0.5.0"}})
+        self._request("initialize", {"clientInfo": {"name": "pocket_chatgpt_bridge", "version": "0.6.0"}})
         self.process.stdin.write('{"method":"initialized"}\n')
         self.process.stdin.flush()
 
@@ -98,6 +101,7 @@ class ThreadCatalog:
                 projects = metadata.get("local-projects", {})
                 items = []
                 for thread in result["data"]:
+                    self.cwd[thread["id"]] = thread.get("cwd")
                     title = thread.get("name") or thread.get("preview", "").split("\n", 1)[0] or "제목 없는 대화"
                     project_id = thread.get("projectId") or assignments.get(thread["id"], {}).get("projectId")
                     project_name = projects.get(project_id, {}).get("name") if project_id else None
@@ -121,30 +125,51 @@ class ThreadCatalog:
                 if cursor:
                     params["cursor"] = cursor
                 result = self._request("thread/turns/list", params)
+                cwd = self.cwd.get(thread_id)
+                if cwd is None:
+                    details = self._request("thread/read", {"threadId": thread_id, "includeTurns": False})
+                    cwd = details["thread"].get("cwd")
+                    self.cwd[thread_id] = cwd
                 messages = []
                 turns = result.get("data", [])
                 for turn in reversed(turns):
                     for item in turn.get("items", []):
                         kind = item.get("type")
+                        if kind in ("imageGeneration", "imageView"):
+                            ref = item.get("savedPath") or item.get("path")
+                            if not ref and kind == "imageGeneration" and item.get("result"):
+                                ref = "data:image/png;base64," + item["result"]
+                            image = self.media.add(thread_id, ref, cwd=cwd,
+                                alt="생성한 이미지" if kind == "imageGeneration" else "이미지")
+                            if image:
+                                messages.append({"id": turn["id"]+":"+item["id"], "role": "assistant", "text": "",
+                                    "images": [image], "turn_id": turn["id"], "turn_status": turn.get("status")})
+                            continue
                         if kind not in ("userMessage", "agentMessage"):
                             continue
                         attachments = []
+                        images = []
                         if kind == "userMessage":
                             texts = []
                             for part in item.get("content", []):
                                 if part.get("type") == "text":
                                     texts.append(part.get("text", ""))
                                 elif part.get("type") in ("image", "localImage"):
-                                    attachments.append("이미지 첨부")
+                                    image = self.media.add(thread_id, part.get("url") or part.get("path"), cwd=cwd, alt="첨부 이미지")
+                                    if image:
+                                        images.append(image)
+                                    else:
+                                        attachments.append("이미지 위치를 확인하지 못했어요")
                                 else:
                                     attachments.append(part.get("name") or "첨부 항목")
                             text = "\n\n".join(texts)
                         else:
                             text = item.get("text", "")
-                        if text or attachments:
+                            text, images = self.media.markdown(thread_id, text, cwd)
+                        if text or attachments or images:
                             messages.append({"id": turn["id"] + ":" + item["id"],
                                 "role": "user" if kind == "userMessage" else "assistant", "text": text,
-                                "attachments": attachments, "phase": item.get("phase"),
+                                "attachments": attachments, "images": images, "phase": item.get("phase"),
                                 "turn_id": turn["id"], "turn_status": turn.get("status")})
                 latest = turns[0] if turns else {}
                 return {"messages": messages, "next_cursor": result.get("nextCursor"),
